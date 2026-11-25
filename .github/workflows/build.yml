@@ -1,0 +1,27 @@
+name: build
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Visual Studio 2022, toolset v143 = Windows 7-kompatibel)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T v143
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Check Windows 7 compatibility (no newer system DLLs)
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -like "*Hostx64\x64*" } | Select-Object -First 1
+          $deps = & $dumpbin.FullName /dependents build\Release\TruePan.dll
+          $deps
+          if ($deps -match "api-ms-win|VCRUNTIME|MSVCP|ucrtbase") { throw "TruePan.dll needs DLLs that Windows 7 may lack" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TruePan-win64
+          path: build/Release/TruePan.dll
