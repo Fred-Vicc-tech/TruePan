@@ -17,7 +17,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <string>
+#include <vector>
 
 namespace truepan {
 
@@ -58,7 +60,12 @@ enum { kShapeSine = 0, kShapeTriangle, kShapeSquare, kNumShapes };
 const int kNumRates = 12;
 enum { kMonStereo = 0, kMonMono, kMonMid, kMonSides, kNumMonitors };
 enum { kFxPan = 0, kFxTremolo, kFxLeslie, kNumFxModes };
-enum { kLesSlow = 0, kLesFast };
+// LESLIE SPEED: en rotation (hornet) per notlängd, följer Lives tempo.
+// Ratten går från långsamt (1/2) till snabbt (1/32), som RATE.
+const int kNumLesSpeeds = 8;
+static const char* const kLesSpeedNames[kNumLesSpeeds] = { "1/2", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
+static const double kLesSpeedBeats[kNumLesSpeeds] = { 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
+const int kLesSpeedSlowV11 = 0, kLesSpeedFastV11 = 5;   // v1.1 hade SLOW/FAST -> 1/2 / 1/16
 
 static const char* const kLawNames[kNumLaws] = { "0.0", "-3.0", "-4.5", "-6.0" };
 static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square" };
@@ -99,7 +106,9 @@ inline int shapeFromNorm(float n) { return choiceFromNorm(n, kNumShapes); }
 inline int rateFromNorm(float n) { return choiceFromNorm(n, kNumRates); }
 inline int monitorFromNorm(float n) { return choiceFromNorm(n, kNumMonitors); }
 inline int fxModeFromNorm(float n) { return choiceFromNorm(n, kNumFxModes); }
-inline int lesSpeedFromNorm(float n) { return n >= 0.5f ? kLesFast : kLesSlow; }
+inline int lesSpeedFromNorm(float n) { return choiceFromNorm(n, kNumLesSpeeds); }
+// Projekt/presets från v1.1: SLOW (0) / FAST (1) räknas om till ratten
+inline float lesSpeedNormFromV11(float old) { return choiceNorm(old >= 0.5f ? kLesSpeedFastV11 : kLesSpeedSlowV11, kNumLesSpeeds); }
 
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
@@ -137,7 +146,7 @@ inline float defaultParam(int index)
     case kParamOutput:  return outputDbToNorm(0.0);
     case kParamMonitor: return 0.0f;                            // STEREO
     case kParamFxMode:  return 0.0f;                            // PAN
-    case kParamLesSpeed: return 0.0f;                           // SLOW
+    case kParamLesSpeed: return choiceNorm(1, kNumLesSpeeds);   // 1/4
     default:            return 0.0f;
     }
 }
@@ -168,7 +177,7 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     case kParamOutput:  std::snprintf(out, max, "%.1f", outputNormToDb(n)); break;
     case kParamMonitor: std::snprintf(out, max, "%s", kMonitorNames[monitorFromNorm(n)]); break;
     case kParamFxMode:  std::snprintf(out, max, "%s", kFxNames[fxModeFromNorm(n)]); break;
-    case kParamLesSpeed: std::snprintf(out, max, "%s", lesSpeedFromNorm(n) == kLesFast ? "Fast" : "Slow"); break;
+    case kParamLesSpeed: std::snprintf(out, max, "%s", kLesSpeedNames[lesSpeedFromNorm(n)]); break;
     default:            std::snprintf(out, max, "-"); break;
     }
 }
@@ -268,39 +277,46 @@ struct LR4
 };
 
 // ---------------------------------------------------------------------------
-// LESLIE: roterande högtalare. Ljudet delas vid 800 Hz i bas-trumma och
-// diskant-horn som roterar med var sin hastighet. Två mikrofoner (vänster och
-// höger) hör både nivåskiftningar och dopplereffekt (tonhöjden svajar).
-// SLOW (chorale) / FAST (tremolo); hornet växlar fart snabbt, trumman långsamt,
-// precis som på originalet.
+// LESLIE: roterande högtalare i ett rum. Ljudet delas vid 800 Hz i bastrumma
+// och diskanthorn som snurrar med var sin hastighet (trumman ca 13 % långsammare
+// och tröttare, som på originalet). Två mikrofoner står på var sin sida
+// (vänster och höger): när hornet pekar mot vänster hörs det starkt och nära
+// där, samtidigt som höger mest hör reflexen från rummets vägg. Ljudet snurrar
+// alltså runt i stereobilden, med dopplereffekt (tonhöjden svajar).
+// Farten byts mjukt (hornet på ca 1 s, trumman på några sekunder).
 // ---------------------------------------------------------------------------
 class Leslie
 {
 public:
-    static const int kBufSize = 2048;   // räcker till 768 kHz (högst 2,2 ms fördröjning)
+    static const int kBufSize = 16384;   // räcker till 768 kHz (högst ca 14 ms fördröjning)
+
+    Leslie() : horn_(kBufSize, 0.0), drum_(kBufSize, 0.0) {}
 
     void prepare(double sr)
     {
         sr_ = sr;
         lpDrum_.set(false, 800.0, sr); hpHorn_.set(true, 800.0, sr);
+        reflLp_ = 1.0 - std::exp(-2.0 * kPi * 5000.0 / sr);  // väggen tar bort lite diskant
         reset();
     }
     void reset()
     {
         lpDrum_.reset(); hpHorn_.reset();
-        std::memset(horn_, 0, sizeof horn_);
-        std::memset(drum_, 0, sizeof drum_);
+        std::fill(horn_.begin(), horn_.end(), 0.0);
+        std::fill(drum_.begin(), drum_.end(), 0.0);
+        reflZ_[0] = reflZ_[1] = 0.0;
         w_ = 0;
     }
-    void setFast(bool fast) { fast_ = fast; }
+    void setHornHz(double hz) { target_ = clampd(hz, 0.1, 25.0); }
+    void setRoom(double amount) { room_ = clampd(amount, 0.0, 1.0); }   // 0 = bara mikrofonerna (för tester)
 
     // Hastigheten och vinklarna går alltid, även när effekten inte hörs,
     // så att den låter naturligt när man slår på den.
     void advance()
     {
-        const double hornT = fast_ ? 6.75 : 0.83, drumT = fast_ ? 5.9 : 0.70;
-        const double hornTau = hornT > hornHz_ ? 0.8 : 1.2;   // sekunder
-        const double drumTau = drumT > drumHz_ ? 3.5 : 4.5;
+        const double hornT = target_, drumT = target_ * 0.87;
+        const double hornTau = hornT > hornHz_ ? 0.7 : 1.0;   // sekunder
+        const double drumTau = drumT > drumHz_ ? 3.0 : 4.0;
         hornHz_ += (hornT - hornHz_) * (1.0 - std::exp(-1.0 / (hornTau * sr_)));
         drumHz_ += (drumT - drumHz_) * (1.0 - std::exp(-1.0 / (drumTau * sr_)));
         hornAng_ += 2.0 * kPi * hornHz_ / sr_;
@@ -313,27 +329,47 @@ public:
     {
         horn_[w_] = hpHorn_.process(in);
         drum_[w_] = lpDrum_.process(in);
-        const double micL = -1.2, micR = 1.2;          // mikrofonerna ca 70 grader åt var sida
-        outL = rotor(horn_, hornAng_ - micL, 0.0005, 0.6) + rotor(drum_, drumAng_ - micL, 0.0002, 0.3);
-        outR = rotor(horn_, hornAng_ - micR, 0.0005, 0.6) + rotor(drum_, drumAng_ - micR, 0.0002, 0.3);
+        // Mikrofonerna på motsatta sidor (vänster = +90 grader, höger = -90 grader)
+        const double micL = 0.5 * kPi, micR = -0.5 * kPi;
+        double l = rotor(horn_, hornAng_ - micL, 0.0005, 0.85) + rotor(drum_, drumAng_ - micL, 0.0002, 0.5);
+        double r = rotor(horn_, hornAng_ - micR, 0.0005, 0.85) + rotor(drum_, drumAng_ - micR, 0.0002, 0.5);
+        // Rummet: när rotorn pekar bort från en mikrofon hörs ljudet via väggen
+        // bakom (längre väg, olika långt till vänster och höger vägg).
+        double rl = wall(hornAng_ - micL, drumAng_ - micL, 0.0073);
+        double rr = wall(hornAng_ - micR, drumAng_ - micR, 0.0111);
+        reflZ_[0] += (rl - reflZ_[0]) * reflLp_;
+        reflZ_[1] += (rr - reflZ_[1]) * reflLp_;
+        outL = (l + 0.55 * room_ * reflZ_[0]) * kNorm;
+        outR = (r + 0.55 * room_ * reflZ_[1]) * kNorm;
         w_ = (w_ + 1) & (kBufSize - 1);
     }
 
     double hornHz() const { return hornHz_; }
     double drumHz() const { return drumHz_; }
+    double hornAngle() const { return hornAng_; }
 
 private:
-    // Ett rotor-ljud sett från en mikrofon: avståndet ändras (fördröjning =
-    // doppler) och nivån är högst när rotorn pekar mot mikrofonen.
-    double rotor(const double* buf, double ang, double depthSec, double amDepth) const
+    static constexpr double kNorm = 0.8;
+
+    // Rotorn sedd från en mikrofon: avståndet ändras (fördröjning = doppler)
+    // och nivån är högst när rotorn pekar mot mikrofonen.
+    double rotor(const std::vector<double>& buf, double ang, double depthSec, double amDepth) const
     {
         const double c = std::cos(ang);
         const double delay = (0.0012 + depthSec * (1.0 - c)) * sr_;
-        const double gain = (1.0 + amDepth * c) / (1.0 + amDepth * 0.5);
+        const double gain = 1.0 + amDepth * c;
         return read(buf, delay) * gain;
     }
+    // Reflexen: starkast när rotorn pekar bort från mikrofonen (mot väggen)
+    double wall(double hornAng, double drumAng, double extraSec) const
+    {
+        const double ch = -std::cos(hornAng), cd = -std::cos(drumAng);
+        const double h = read(horn_, (0.0012 + extraSec + 0.0005 * (1.0 - ch)) * sr_) * (0.5 + 0.5 * ch);
+        const double d = read(drum_, (0.0012 + extraSec + 0.0002 * (1.0 - cd)) * sr_) * (0.7 + 0.3 * cd);
+        return h + d;
+    }
     // Läs med bråkdels-fördröjning (Hermite-interpolation)
-    double read(const double* buf, double delay) const
+    double read(const std::vector<double>& buf, double delay) const
     {
         const int di = (int)delay;
         const double f = delay - di;
@@ -348,10 +384,11 @@ private:
 
     double sr_ = 44100.0;
     LR4 lpDrum_, hpHorn_;
-    double horn_[kBufSize], drum_[kBufSize];
+    std::vector<double> horn_, drum_;
+    double reflLp_ = 0.5, reflZ_[2] = { 0.0, 0.0 }, room_ = 1.0;
     int w_ = 0;
-    bool fast_ = false;
-    double hornHz_ = 0.83, drumHz_ = 0.70, hornAng_ = 0.0, drumAng_ = 1.0;
+    double target_ = 2.0;
+    double hornHz_ = 2.0, drumHz_ = 1.74, hornAng_ = 0.0, drumAng_ = 1.0;
 };
 
 // ---------------------------------------------------------------------------
@@ -396,7 +433,7 @@ public:
         outGain_ = dbToGain(outputNormToDb(n[kParamOutput]));
         monitor_ = monitorFromNorm(n[kParamMonitor]);
         fxMode_ = fxModeFromNorm(n[kParamFxMode]);
-        leslie_.setFast(lesSpeedFromNorm(n[kParamLesSpeed]) == kLesFast);
+        lesSpeed_ = lesSpeedFromNorm(n[kParamLesSpeed]);
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
@@ -426,6 +463,7 @@ public:
         }
 
         const double phaseInc = tempo_ / 60.0 / sr_ / kRateBeats[rate_];
+        leslie_.setHornHz(tempo_ / 60.0 / kLesSpeedBeats[lesSpeed_]);
         double pkL = 0.0, pkR = 0.0;
         double pos = pan_;
 
@@ -439,7 +477,12 @@ public:
             if (depth_ > 0.0) {
                 const double lfo = lfoValue(shape_, phase_);
                 if (fxMode_ == kFxPan) pos = clampd(pan_ + depth_ * lfo, -1.0, 1.0);
-                else if (fxMode_ == kFxTremolo) ttrem = 1.0 - depth_ * (0.5 - 0.5 * lfo);
+                else if (fxMode_ == kFxTremolo) {
+                    // Kvadrerad kurva: djupare och längre dalar, så att tremolot hörs
+                    // tydligt (DEPTH 50 % sänker 12 dB i stället för 6 dB).
+                    const double t = 1.0 - depth_ * (0.5 - 0.5 * lfo);
+                    ttrem = t * t;
+                }
             }
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
             phase_ += phaseInc;
@@ -539,7 +582,7 @@ private:
     // parametrar
     double pan_ = 0.0, width_ = 1.0, depth_ = 0.0, outGain_ = 1.0, lowHz_ = 120.0;
     int mode_ = kModeStereo, law_ = kLaw3, rate_ = 5, shape_ = kShapeSine;
-    int monitor_ = kMonStereo, fxMode_ = kFxPan;
+    int monitor_ = kMonStereo, fxMode_ = kFxPan, lesSpeed_ = 1;
     bool lowOn_ = false;
 
     // utjämnade värden
@@ -590,9 +633,9 @@ inline void factoryPresetValues(int i, float* v)
             v[kParamMode] = 0.0f; break;
     case 8: v[kParamDepth] = 0.7f; v[kParamRate] = choiceNorm(1, kNumRates); break;
     case 9: v[kParamLowMono] = lowMonoNorm(120.0); v[kParamWidth] = widthNorm(1.2); break;
-    case 10: v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); v[kParamDepth] = 0.6f; v[kParamRate] = choiceNorm(7, kNumRates); break;
-    case 11: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = 0.0f; break;
-    case 12: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = 1.0f; break;
+    case 10: v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); v[kParamDepth] = 0.85f; v[kParamRate] = choiceNorm(7, kNumRates); break;
+    case 11: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(0, kNumLesSpeeds); break;
+    case 12: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(5, kNumLesSpeeds); break;
     default: break;
     }
 }
@@ -612,7 +655,8 @@ inline void cleanName(const char* in, char* out, size_t max)
 // ---------------------------------------------------------------------------
 // Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
 // ---------------------------------------------------------------------------
-static const char* const kPresetHeader = "TruePan preset 1";
+static const char* const kPresetHeader = "TruePan preset 2";
+static const char* const kPresetHeaderV11 = "TruePan preset 1";   // v1.1: LesSpd var SLOW/FAST
 
 inline std::string cleanPresetName(const std::string& in)
 {
@@ -663,7 +707,8 @@ inline std::string uniquePresetName(const std::string& base, ExistsFn exists)
 // Returnerar false om texten inte är en TruePan-preset.
 inline bool presetFromText(const std::string& text, float* v, std::string* name)
 {
-    if (text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool v11 = text.compare(0, std::strlen(kPresetHeaderV11), kPresetHeaderV11) == 0;
+    if (!v11 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
     for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
     if (name) *name = "Untitled";
     size_t pos = 0;
@@ -680,7 +725,10 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
             if (key != kParamNames[i]) continue;
             char* endp = nullptr;
             const double d = std::strtod(val.c_str(), &endp);
-            if (endp != val.c_str() && d >= 0.0 && d <= 1.0) v[i] = (float)d;   // ogiltigt ignoreras
+            if (endp != val.c_str() && d >= 0.0 && d <= 1.0) {               // ogiltigt ignoreras
+                v[i] = (float)d;
+                if (v11 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV11((float)d);
+            }
         }
     }
     return true;

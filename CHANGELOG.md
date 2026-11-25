@@ -1,5 +1,14 @@
 # Ändringslogg
 
+## v1.2 – SPEED-ratt, bredare Leslie, tydligare tremolo (2026-11-26)
+- LESLIE: SPEED är en ratt i 8 steg (1/2, 1/4, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32) = ett varv per
+  notlängd i Lives tempo. Farten ändras fortfarande mjukt som på en riktig Leslie.
+- LESLIE i stereo: mikrofonerna står på var sin sida, och rummets väggar ger reflexer
+  (olika långt till vänster och höger). Ljudet snurrar tydligt mellan höger och vänster.
+- TREMOLO: kvadrerad kurva, djupare dalar (DEPTH 50 % = −12 dB i stället för −6 dB).
+  Presetet Tremolo 1/8 har DEPTH 85 %.
+- Projekt och presets från v1.1: SLOW blir 1/2, FAST blir 1/16.
+
 ## v1.1 – Tremolo, Leslie, SAVE/LOAD, MONITOR (2026-11-26)
 - AUTO-PAN har tre lägen: PAN, TREM (tremolo) och LESLIE (roterande högtalare, SLOW/FAST).
 - Vågformen väljs genom att klicka på rutan bredvid DEPTH.

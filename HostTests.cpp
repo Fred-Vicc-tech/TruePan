@@ -178,6 +178,22 @@ int main()
         o->dispatcher(o, effClose, 0, 0, nullptr, 0);
     }
 
+    // Projekt sparat med v1.1 (version 2, LESLIE FAST): blir SPEED 1/16
+    {
+        std::vector<unsigned char> v11(48 + 12 * 4, 0);
+        std::memcpy(v11.data(), "TPst", 4);
+        const uint32_t ver = 2, cnt = 12; const int32_t prog = -1;
+        std::memcpy(v11.data() + 4, &ver, 4); std::memcpy(v11.data() + 8, &cnt, 4); std::memcpy(v11.data() + 12, &prog, 4);
+        float vals[12]; for (int i = 0; i < 12; ++i) vals[i] = defaultParam(i);
+        vals[kParamLesSpeed] = 1.0f;
+        std::memcpy(v11.data() + 48, vals, sizeof vals);
+        AEffect* o = VSTPluginMain(hostCallback);
+        o->dispatcher(o, effSetChunk, 0, (VstIntPtr)v11.size(), v11.data(), 0);
+        o->dispatcher(o, effGetParamDisplay, kParamLesSpeed, 0, text, 0);
+        check(std::strcmp(text, "1/16") == 0, "projekt fran v1.1 med LESLIE FAST oppnas som SPEED 1/16");
+        o->dispatcher(o, effClose, 0, 0, nullptr, 0);
+    }
+
     // Kortare chunk (framtida/äldre version med färre parametrar): resten får standardvärden
     {
         std::vector<unsigned char> shortChunk(48 + 2 * 4, 0);

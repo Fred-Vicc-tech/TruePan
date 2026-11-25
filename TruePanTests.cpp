@@ -373,7 +373,7 @@ int main()
         run(e2, p, dc, dc, ol, orr);
         double mn = 1.0;
         for (int i = 2000; i < n; ++i) mn = std::fmin(mn, ol[i]);
-        check(std::fabs(mn - 0.25) < 0.01, "TREMOLO DEPTH 50 %: sanker som mest till halva nivan");
+        check(std::fabs(mn - 0.125) < 0.01, "TREMOLO DEPTH 50 %: tydlig sankning, -12 dB i dalarna");
         p.v[kParamShape] = choiceNorm(kShapeSquare, kNumShapes);
         p.v[kParamDepth] = 1.0f;
         Engine e3; e3.prepare(kSr);
@@ -400,34 +400,86 @@ int main()
             check(d < 1e-6, "LESLIE med DEPTH 0: ljudet orort");
         }
         p.v[kParamDepth] = 1.0f;
-        p.v[kParamLesSpeed] = 1.0f;   // FAST
+        p.v[kParamLesSpeed] = choiceNorm(5, kNumLesSpeeds);   // 1/16 vid 120 bpm = 8 varv/s
         std::vector<float> m = sine(2000.0, n);
         Engine e; e.prepare(kSr);
         run(e, p, m, m, ol, orr);
-        check(e.leslieHornHz() > 6.0 && e.leslieDrumHz() < e.leslieHornHz() - 0.5,
-              "LESLIE FAST: hornet varvar upp pa 2 s, trumman langsammare (som originalet)");
+        check(e.leslieHornHz() > 7.0 && e.leslieDrumHz() < e.leslieHornHz() - 0.5,
+              "LESLIE SPEED 1/16: hornet varvar upp pa 2 s, trumman langsammare (som originalet)");
+        // Ljudet snurrar i rummet: när vänster är starkt är höger svagt (10 ms-fönster)
+        {
+            const int win = 480;
+            std::vector<double> el, er;
+            for (int i = n / 2; i + win <= n; i += win) {
+                double a = 0, b = 0;
+                for (int k = 0; k < win; ++k) { a += ol[i + k] * (double)ol[i + k]; b += orr[i + k] * (double)orr[i + k]; }
+                el.push_back(std::sqrt(a / win)); er.push_back(std::sqrt(b / win));
+            }
+            double ml = 0, mr = 0;
+            for (size_t i = 0; i < el.size(); ++i) { ml += el[i]; mr += er[i]; }
+            ml /= el.size(); mr /= er.size();
+            double cov = 0, vl = 0, vr = 0;
+            for (size_t i = 0; i < el.size(); ++i) { cov += (el[i] - ml) * (er[i] - mr); vl += (el[i] - ml) * (el[i] - ml); vr += (er[i] - mr) * (er[i] - mr); }
+            const double ec = cov / std::sqrt(vl * vr);
+            const double swing = std::sqrt(vl / el.size()) / ml;
+            std::printf("      (nivakorrelation L/R %.2f, nivasving %.0f %%)\n", ec, swing * 100.0);
+            check(ec < -0.3 && swing > 0.15, "LESLIE: ljudet snurrar mellan vanster och hoger (motsatta nivaer)");
+        }
         // Stereo: vänster och höger olika
         double sl = 0, sr = 0, slr = 0;
         for (int i = n / 2; i < n; ++i) { sl += ol[i] * (double)ol[i]; sr += orr[i] * (double)orr[i]; slr += ol[i] * (double)orr[i]; }
         const double corr = slr / std::sqrt(sl * sr);
-        check(corr < 0.95, "LESLIE: rorelse i stereo (vanster och hoger skiljer sig)");
+        std::printf("      (korrelation L/R %.2f)\n", corr);
+        check(corr < 0.6, "LESLIE: brett i stereo (vanster och hoger tydligt olika)");
         check(std::fabs(db(rms(ol, n / 2) / rms(m, n / 2))) < 3.0, "LESLIE: ungefar samma niva som utan effekt (+-3 dB)");
-        // Doppler: periodtiden svajar (tonhöjden ändras)
-        double lastCross = -1.0, minP = 1e9, maxP = 0.0;
-        for (int i = n / 2; i < n; ++i) {
-            if (ol[i - 1] < 0.0f && ol[i] >= 0.0f) {
-                const double t = (i - 1) + ol[i - 1] / (double)(ol[i - 1] - ol[i]);
-                if (lastCross > 0.0) { minP = std::fmin(minP, t - lastCross); maxP = std::fmax(maxP, t - lastCross); }
-                lastCross = t;
+        // Doppler: periodtiden svajar (mäts på mikrofonen utan rumsreflexer)
+        {
+            Leslie les; les.prepare(kSr); les.setRoom(0.0); les.setHornHz(8.0);
+            std::vector<double> out(n);
+            for (int i = 0; i < n; ++i) {
+                double a, b;
+                les.advance();
+                les.process(0.5 * std::sin(2.0 * kPi * 2000.0 * i / kSr), a, b);
+                out[i] = a;
             }
+            double lastCross = -1.0, minP = 1e9, maxP = 0.0;
+            for (int i = n / 2; i < n; ++i) {
+                if (out[i - 1] < 0.0 && out[i] >= 0.0) {
+                    const double t0 = (i - 1) + out[i - 1] / (out[i - 1] - out[i]);
+                    if (lastCross > 0.0) { minP = std::fmin(minP, t0 - lastCross); maxP = std::fmax(maxP, t0 - lastCross); }
+                    lastCross = t0;
+                }
+            }
+            std::printf("      (periodtid max/min %.3f)\n", maxP / minP);
+            check(maxP / minP > 1.02 && maxP / minP < 1.15, "LESLIE: dopplereffekt (tonhojden svajar 1-7 %)");
         }
-        check(maxP / minP > 1.02 && maxP / minP < 1.15, "LESLIE: dopplereffekt (tonhojden svajar 1-7 %)");
-        // Inbromsning till SLOW
-        p.v[kParamLesSpeed] = 0.0f;
+        // Inbromsning till 1/2 (1 varv/s vid 120 bpm)
+        p.v[kParamLesSpeed] = choiceNorm(0, kNumLesSpeeds);
         std::vector<float> m2 = sine(2000.0, 48000 * 4);
         std::vector<float> a, b;
         run(e, p, m2, m2, a, b);
-        check(e.leslieHornHz() < 1.5 && e.leslieDrumHz() > e.leslieHornHz(), "LESLIE SLOW: hornet bromsar in pa nagra sekunder, trumman langsammare");
+        check(e.leslieHornHz() < 1.5 && e.leslieDrumHz() > e.leslieHornHz(), "LESLIE 1/2: hornet bromsar in pa nagra sekunder, trumman langsammare");
+        // Farten följer Lives tempo
+        {
+            Engine t; t.prepare(kSr);
+            Params q = p; q.v[kParamLesSpeed] = choiceNorm(1, kNumLesSpeeds);   // 1/4
+            std::vector<float> z(48000, 0.0f), a2, b2;
+            for (int k = 0; k < 8; ++k) {
+                for (int pos = 0; pos < 48000; pos += 480) {
+                    t.setParams(q.v);
+                    t.setTransport(true, 140.0, false, false, 0.0);
+                    t.process(&z[pos], &z[pos], &z[pos], &z[pos], 480, false);
+                }
+            }
+            check(std::fabs(t.leslieHornHz() - 140.0 / 60.0) < 0.02, "LESLIE SPEED 1/4 vid 140 bpm: hornet ett varv per fjardedelsnot");
+        }
+        {
+            bool ok = true;
+            for (int i = 0; i < kNumLesSpeeds; ++i) ok = ok && lesSpeedFromNorm(choiceNorm(i, kNumLesSpeeds)) == i;
+            ok = ok && kLesSpeedBeats[0] > kLesSpeedBeats[kNumLesSpeeds - 1];
+            check(ok && lesSpeedFromNorm(lesSpeedNormFromV11(1.0f)) == 5 && lesSpeedFromNorm(lesSpeedNormFromV11(0.0f)) == 0,
+                  "SPEED-ratten: 8 steg 1/2 ... 1/32; v1.1 FAST -> 1/16, SLOW -> 1/2");
+        }
         // Byte PAN -> LESLIE klickar inte
         {
             std::vector<float> s5 = sine(500.0, 24000), cl(24000), cr(24000);
@@ -461,6 +513,11 @@ int main()
         ok = presetFromText("TruePan preset 1\nName=Odd\nPan=0.25\nWidth=7\nJunk line\nUnknown=0.3\n", back, &name);
         check(ok && name == "Odd" && back[kParamPan] == 0.25f && back[kParamWidth] == defaultParam(kParamWidth)
               && back[kParamOutput] == defaultParam(kParamOutput), "trasiga rader och varden utanfor 0..1 ignoreras, saknade far standard");
+        {
+            float w[kNumParams];
+            const bool okOld = presetFromText("TruePan preset 1\r\nName=Old\r\nLesSpd=1.000000\r\n", w, &name);
+            check(okOld && lesSpeedFromNorm(w[kParamLesSpeed]) == 5, "preset fran v1.1 (FAST) laddas som SPEED 1/16");
+        }
         check(cleanPresetName("A=B\x01\xC3\xA5") == "AB__" && cleanPresetName("") == "Untitled", "presetnamn rensas fran konstiga tecken");
         const std::string u = uniquePresetName("Wide", [](const std::string& s) { return s == "Wide" || s == "Wide 2"; });
         check(u == "Wide 3", "SAVE foreslar ett namn som inte finns (Wide 3)");
@@ -506,8 +563,8 @@ int main()
         paramDisplayText(kParamOutput, defaultParam(kParamOutput), t, sizeof t); ok = ok && std::strcmp(t, "0.0") == 0;
         paramDisplayText(kParamMonitor, 1.0f, t, sizeof t);  ok = ok && std::strcmp(t, "Sides") == 0;
         paramDisplayText(kParamFxMode, 1.0f, t, sizeof t);   ok = ok && std::strcmp(t, "Leslie") == 0;
-        paramDisplayText(kParamLesSpeed, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "Fast") == 0;
-        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, Fast");
+        paramDisplayText(kParamLesSpeed, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "1/32") == 0;
+        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32");
 
         bool namesShort = true;
         for (int i = 0; i < kNumParams; ++i) namesShort = namesShort && std::strlen(kParamNames[i]) <= 7;

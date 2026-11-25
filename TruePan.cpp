@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1100;           // TruePan 1.1
+const VstInt32 kVersion = 1200;           // TruePan 1.2
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 2 (v1.1: 12 parametrar; v1.0 sparade 9)
+    uint32_t version;       // 3 (v1.2: SPEED-ratt; v1.1 = 2 med SLOW/FAST; v1.0 = 1 med 9 parametrar)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 2;
+        p->chunk.version = 3;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -303,6 +303,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         for (uint32_t i = 0; i < count && i < (uint32_t)kNumParams; ++i) {
             float v;
             std::memcpy(&v, data + kChunkHeader + i * sizeof(float), sizeof(float));
+            if (version == 2 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV11(v);
             p->setParam((int)i, v); // ogiltiga värden ignoreras
         }
         return 1;
@@ -454,7 +455,7 @@ struct Editor
     Plugin* plugin = nullptr;
     HWND hwnd = nullptr;
 
-    static const int kNumKnobs = 6;
+    static const int kNumKnobs = 7;
     KnobDef knobs[kNumKnobs] = {
         { kParamPan,     colX(0) + 103.0f, 181.0f, 44.0f },
         { kParamWidth,   colX(1) + 62.0f, kKnobRowY, 36.0f },
@@ -462,6 +463,7 @@ struct Editor
         { kParamDepth,   colX(2) + 62.0f, kKnobRowY, 36.0f },
         { kParamRate,    colX(2) + kSideKnobDX, kKnobRowY, 20.0f },
         { kParamOutput,  colX(3) + 103.0f, 181.0f, 44.0f },
+        { kParamLesSpeed, colX(2) + kSideKnobDX, kKnobRowY, 20.0f }, // samma plats som RATE (LESLIE)
     };
     int dragKnob = -1;
     int dragStartY = 0;
@@ -479,8 +481,6 @@ struct Editor
                                    { colX(2) + 75.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 136.0f, 119.0f, 56.0f, 34.0f } };
     RectDef shapeBox   = { colX(2) + 100.0f, 160.0f, 92.0f, 26.0f };
-    RectDef btnSlow    = { colX(2) + 129.0f, 207.0f, 56.0f, 26.0f };
-    RectDef btnFast    = { colX(2) + 129.0f, 239.0f, 56.0f, 26.0f };
     RectDef presetPrev = { colX(3) + 14.0f,  357.0f, 30.0f, 30.0f };
     RectDef presetNext = { colX(3) + 162.0f, 357.0f, 30.0f, 30.0f };
     RectDef btnSave    = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
@@ -494,7 +494,8 @@ struct Editor
     int knobAt(int x, int y) const
     {
         for (int i = 0; i < kNumKnobs; ++i) {
-            if (knobs[i].param == kParamRate && leslieMode()) continue; // RATE är dold i LESLIE-läget
+            if (knobs[i].param == kParamRate && leslieMode()) continue;      // RATE är dold i LESLIE-läget
+            if (knobs[i].param == kParamLesSpeed && !leslieMode()) continue; // SPEED syns bara i LESLIE-läget
             const float dx = x - knobs[i].cx, dy = y - knobs[i].cy, rr = knobs[i].r + 12.0f;
             if (dx * dx + dy * dy <= rr * rr) return i;
         }
@@ -743,7 +744,6 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     const int shape = shapeFromNorm(pv[kParamShape]);
     const int fxMode = fxModeFromNorm(pv[kParamFxMode]);
     const int monitor = monitorFromNorm(pv[kParamMonitor]);
-    const bool fast = lesSpeedFromNorm(pv[kParamLesSpeed]) == kLesFast;
     const double depth = depthFromNorm(pv[kParamDepth]);
     const bool autoOn = depth > 0.0005;
     const double pos = p->displayPos.load();
@@ -767,7 +767,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -835,11 +835,10 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     swprintf(txt, 64, L"%.0f %%", depth * 100.0);
     drawBigValue(g, ff, ed->knobs[3], txt, kText);
     if (fxMode == kFxLeslie) {
-        // SPEED: SLOW (chorale) / FAST (tremolo)
-        const KnobDef& k = ed->knobs[4];
-        drawText(g, L"SPEED", ff, 12, FontStyleBold, kText, k.cx - 52.0f, k.cy - 46.0f, 104.0f, StringAlignmentCenter);
-        drawButton(g, ff, ed->btnSlow, L"SLOW", !fast, kCyan, 12.0f);
-        drawButton(g, ff, ed->btnFast, L"FAST", fast, kOrange, 12.0f);
+        // SPEED: en rotation per notlängd (1/2 ... 1/32), följer Lives tempo
+        wchar_t sw[16];
+        wideFromNarrow(kLesSpeedNames[lesSpeedFromNorm(pv[kParamLesSpeed])], sw, 16);
+        drawSmallKnob(g, ff, ed->knobs[6], pv[kParamLesSpeed], L"SPEED", sw, !autoOn);
     } else {
         wchar_t rw[24];
         wideFromNarrow(kRateNames[rateFromNorm(pv[kParamRate])], rw, 24);
@@ -1184,10 +1183,7 @@ bool handleButtons(Editor* ed, int x, int y)
     if (ed->monNext.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, +1, true); return true; }
     for (int i = 0; i < kNumFxModes; ++i)
         if (ed->btnFx[i].hit(x, y)) { setParamOnce(ed, kParamFxMode, choiceNorm(i, kNumFxModes)); return true; }
-    if (ed->leslieMode()) {
-        if (ed->btnSlow.hit(x, y)) { setParamOnce(ed, kParamLesSpeed, 0.0f); return true; }
-        if (ed->btnFast.hit(x, y)) { setParamOnce(ed, kParamLesSpeed, 1.0f); return true; }
-    } else if (ed->shapeBox.hit(x, y)) {
+    if (!ed->leslieMode() && ed->shapeBox.hit(x, y)) {
         stepChoice(ed, kParamShape, kNumShapes, +1, true);
         return true;
     }
@@ -1205,6 +1201,7 @@ float wheelStep(int param)
     case kParamPan: return 0.005f;                                               // 1 steg (L1/R1)
     case kParamOutput: return 0.5f / (float)(kOutputMaxDb - kOutputMinDb);       // 0,5 dB
     case kParamRate: return 1.0f / (kNumRates - 1);                              // en notlängd
+    case kParamLesSpeed: return 1.0f / (kNumLesSpeeds - 1);                      // ett steg
     default: return 0.01f;
     }
 }
