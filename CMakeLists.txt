@@ -26,7 +26,7 @@ endif()
 if(WIN32)
     add_library(TruePan MODULE TruePan.cpp TruePanDSP.h vst2.h)
     set_target_properties(TruePan PROPERTIES PREFIX "" SUFFIX ".dll")
-    target_link_libraries(TruePan PRIVATE gdiplus user32 gdi32)
+    target_link_libraries(TruePan PRIVATE gdiplus user32 gdi32 comdlg32 shell32)
 endif()
 
 # --- Automatiska tester ----------------------------------------------------
@@ -37,6 +37,6 @@ add_test(NAME dsp COMMAND TruePanTests)
 
 add_executable(HostTests HostTests.cpp TruePan.cpp)
 if(WIN32)
-    target_link_libraries(HostTests PRIVATE gdiplus user32 gdi32)
+    target_link_libraries(HostTests PRIVATE gdiplus user32 gdi32 comdlg32 shell32)
 endif()
 add_test(NAME host COMMAND HostTests)

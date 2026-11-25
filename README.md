@@ -1,4 +1,4 @@
-# TruePan v1.0 – Stereo Panner
+# TruePan v1.1 – Psychoacoustic Stereo Panner
 
 VST2-effekt (64-bit) för Ableton Live 9.6 på Windows 7 och senare.
 Byggd på samma sätt som TrueSub: eget VST2-gränssnitt (ingen JUCE), CMake,
@@ -14,10 +14,10 @@ statisk runtime och `_WIN32_WINNT=0x0601`.
 | **MODE** | **STEREO** (standard): båda kanalerna följer med när du panorerar – stereobilden smalnar av mot sidan, inget försvinner. **BALANCE**: som en vanlig balansratt – den bortre kanalen sänks. För monoljud låter de två lika. |
 | **WIDTH** | 0 % (mono) … 100 % (oförändrat) … 200 % (extra brett). |
 | **LOW MONO** | Off eller 40–300 Hz. Basen under frekvensen blir mono och **stannar i mitten** även när du panorerar (bra med TrueSub). 24 dB/oktav Linkwitz-Riley, platt nivå. |
-| **AUTO-PAN** | DEPTH (0–100 %), RATE (4 takter … 1/32, även trioler), form SINE / TRIANGLE / SQUARE. Följer Lives takt när Live spelar (”SYNC” visas). |
-| **OUTPUT** | −24 … +12 dB. ”Over 0 dB” lyser rött om ljudet går över 0 dBFS. |
+| **AUTO-PAN** | Tre lägen: **PAN** (ljudet åker mellan vänster och höger), **TREM** (tremolo: nivån svajar i takt) och **LESLIE** (roterande högtalare: horn och bastrumma som snurrar, dopplereffekt, SLOW/FAST med naturlig uppvarvning). DEPTH = hur mycket. För PAN/TREM: RATE (4 takter … 1/32, även trioler) och vågform (klicka på rutan: SINE / TRIANGLE / SQUARE). Följer Lives takt när Live spelar (”SYNC” visas). |
+| **OUTPUT** | −24 … +12 dB. ”Over 0 dB” (uppe till höger) lyser rött om ljudet går över 0 dBFS. Väljaren under ratten: **STEREO** (normalt), **MONO**, **MID** (bara mitten) eller **SIDES** (bara sidorna). MONO och MID låter likadant – MID finns som tydligt namn för mid/side-lyssning. Valet sparas i projektet. |
 | **STEREO FIELD** | Visar var ljudet är just nu (ringen = PAN-ratten, punkten = verklig position med AUTO-PAN) och nivåmätare för L och R. |
-| **PRESET** | 10 fabrikspresets (syns även i Lives presetlista). RESET = tillbaka till standard. MONO = lyssna i mono (sparas inte). |
+| **PRESET** | 13 fabrikspresets (syns även i Lives presetlista), sedan dina egna. **SAVE** sparar en egen preset (.tpp) i mappen *Dokument\TruePan Presets*, som skapas automatiskt. **LOAD** öppnar en preset. Pilarna bläddrar genom fabrikspresets och dina egna. |
 | **PAN LAW-grafen** | Verkliga kurvor för vänster (cyan), höger (orange) och total ljudstyrka (streckad). |
 
 Alla rattar: dra upp/ner, Shift = finjustering, mushjul = små steg, dubbelklick = standardvärde.
@@ -35,9 +35,10 @@ Alla inställningar kan automatiseras i Live och sparas i projektet.
 
 - **TruePanTests** (ljudmotorn): oförändrat ljud i standardläget, alla PAN LAW,
   BALANCE/STEREO, WIDTH, LOW MONO (bas mono, platt nivå, inget klick),
-  AUTO-PAN (tid, takt, mjuka hopp), OUTPUT, MONO, konstiga värden, processortid.
+  AUTO-PAN (tid, takt, mjuka hopp), TREMOLO, LESLIE (fart, stereo, doppler, inget klick),
+  OUTPUT, MONITOR, presetfiler, konstiga värden, processortid.
 - **HostTests** (låtsas vara Live): stereoeffekt 2 in/2 ut, parametrar och texter,
-  tempo/position från värden, spara/öppna projekt, trasig data, presets.
+  tempo/position från värden, spara/öppna projekt (även från v1.0), trasig data, presets.
 - Bygget kontrollerar också att `TruePan.dll` inte behöver några DLL-filer som
   saknas i Windows 7.
 

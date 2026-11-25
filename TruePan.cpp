@@ -27,6 +27,10 @@
   #include <algorithm>
   namespace Gdiplus { using std::min; using std::max; }
   #include <gdiplus.h>
+  #include <commdlg.h>
+  #include <shlobj.h>
+  #include <string>
+  #include <vector>
   #define TRUEPAN_HAS_EDITOR 1
 #else
   #define TRUEPAN_HAS_EDITOR 0
@@ -37,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1000;           // TruePan 1.0
+const VstInt32 kVersion = 1100;           // TruePan 1.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -52,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 1
+    uint32_t version;       // 2 (v1.1: 12 parametrar; v1.0 sparade 9)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -76,7 +80,6 @@ struct Plugin
     std::atomic<float> peakL{ 0.0f };          // högsta nivå sedan fönstret läste
     std::atomic<float> peakR{ 0.0f };
     std::atomic<int> synced{ 0 };              // AUTO-PAN följer Lives takt
-    std::atomic<int> monoCheck{ 0 };           // MONO-knappen (sparas inte i projektet)
 
     StateChunk chunk;
     int program = 0;
@@ -149,7 +152,6 @@ void processBlock(Plugin* p, float** inputs, float** outputs, VstInt32 n, bool a
     float v[kNumParams];
     for (int i = 0; i < kNumParams; ++i) v[i] = p->params[i].load();
     p->engine.setParams(v);
-    p->engine.setMonoCheck(p->monoCheck.load() != 0);
 
     // Tempo och position från Live (AUTO-PAN följer takten när Live spelar)
     bool tempoValid = false, playing = false, ppqValid = false;
@@ -261,7 +263,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (ptr) copyString((char*)ptr, p->presetName, 24);
         return 0;
     case effSetProgramName:
-        if (ptr) cleanName((const char*)ptr, p->presetName, sizeof p->presetName);
+        if (ptr) copyString(p->presetName, cleanPresetName((const char*)ptr).c_str(), sizeof p->presetName);
         return 0;
     case effGetProgramNameIndexed:
         if (ptr && index >= 0 && index < kNumFactoryPresets) { copyString((char*)ptr, factoryPresetName(index), 24); return 1; }
@@ -271,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 1;
+        p->chunk.version = 2;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -293,7 +295,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         char nm[33];
         std::memcpy(nm, data + 16, 32);
         nm[32] = 0;
-        cleanName(nm, p->presetName, sizeof p->presetName);
+        copyString(p->presetName, cleanPresetName(nm).c_str(), sizeof p->presetName);
         // Börja från standardvärden: parametrar som saknas får standardvärden.
         for (int i = 0; i < kNumParams; ++i) p->setParam(i, defaultParam(i));
         const size_t available = ((size_t)value - kChunkHeader) / sizeof(float);
@@ -311,7 +313,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (ptr) copyString((char*)ptr, "TruePan", 32);
         return 1;
     case effGetProductString:
-        if (ptr) copyString((char*)ptr, "TruePan Stereo Panner", 64);
+        if (ptr) copyString((char*)ptr, "TruePan Psychoacoustic Stereo Panner", 64);
         return 1;
     case effGetVendorString:
         if (ptr) copyString((char*)ptr, "TruePan", 64);
@@ -389,8 +391,8 @@ VST_EXPORT AEffect* VSTPluginMain(audioMasterCallback host)
 
 // ===========================================================================
 // Plugin-fönstret (Windows, GDI+), samma stil som TrueSub.
-// Rad 1: PAN, MODE/WIDTH, AUTO-PAN, OUTPUT (lika breda).
-// Rad 2: STEREO FIELD (position och nivåmätare), PRESET.
+// Rad 1: PAN, MODE/WIDTH, AUTO-PAN (PAN/TREM/LESLIE), OUTPUT (lika breda).
+// Rad 2: STEREO FIELD (position och nivåmätare), PRESET (SAVE/LOAD).
 // Nederst: PAN LAW-grafen (verkliga kurvor för vald lag).
 // ===========================================================================
 #if TRUEPAN_HAS_EDITOR
@@ -465,23 +467,34 @@ struct Editor
     int dragStartY = 0;
     float dragStartValue = 0.0f;
 
-    RectDef lawDown    = { colX(0) + 28.0f,  266.0f, 30.0f, 30.0f };
-    RectDef lawUp      = { colX(0) + 149.0f, 266.0f, 30.0f, 30.0f };
+    // Väljare med pilar: samma storlek som PRESET (ruta mellan pilarna)
+    RectDef lawDown    = { colX(0) + 14.0f,  266.0f, 30.0f, 30.0f };
+    RectDef lawUp      = { colX(0) + 162.0f, 266.0f, 30.0f, 30.0f };
+    RectDef monPrev    = { colX(3) + 14.0f,  266.0f, 30.0f, 30.0f };
+    RectDef monNext    = { colX(3) + 162.0f, 266.0f, 30.0f, 30.0f };
     RectDef btnBalance = { colX(1) + 14.0f,  119.0f, 84.0f, 34.0f };
     RectDef btnStereo  = { colX(1) + 106.0f, 119.0f, 84.0f, 34.0f };
-    RectDef shapePrev  = { colX(2) + 14.0f,  119.0f, 30.0f, 34.0f };
-    RectDef shapeNext  = { colX(2) + 162.0f, 119.0f, 30.0f, 34.0f };
+    // AUTO-PAN: tre lägen, vågformsruta (klick = nästa form), SLOW/FAST för LESLIE
+    RectDef btnFx[kNumFxModes] = { { colX(2) + 14.0f, 119.0f, 56.0f, 34.0f },
+                                   { colX(2) + 75.0f, 119.0f, 56.0f, 34.0f },
+                                   { colX(2) + 136.0f, 119.0f, 56.0f, 34.0f } };
+    RectDef shapeBox   = { colX(2) + 100.0f, 160.0f, 92.0f, 26.0f };
+    RectDef btnSlow    = { colX(2) + 129.0f, 207.0f, 56.0f, 26.0f };
+    RectDef btnFast    = { colX(2) + 129.0f, 239.0f, 56.0f, 26.0f };
     RectDef presetPrev = { colX(3) + 14.0f,  357.0f, 30.0f, 30.0f };
     RectDef presetNext = { colX(3) + 162.0f, 357.0f, 30.0f, 30.0f };
-    RectDef btnReset   = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
-    RectDef btnMono    = { colX(3) + 106.0f, 401.0f, 84.0f, 34.0f };
+    RectDef btnSave    = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
+    RectDef btnLoad    = { colX(3) + 106.0f, 401.0f, 84.0f, 34.0f };
 
     float meterL = 0.0f, meterR = 0.0f;   // nivåmätare med mjukt fall
     DWORD overUntil = 0;
 
+    bool leslieMode() const { return fxModeFromNorm(plugin->params[kParamFxMode].load()) == kFxLeslie; }
+
     int knobAt(int x, int y) const
     {
         for (int i = 0; i < kNumKnobs; ++i) {
+            if (knobs[i].param == kParamRate && leslieMode()) continue; // RATE är dold i LESLIE-läget
             const float dx = x - knobs[i].cx, dy = y - knobs[i].cy, rr = knobs[i].r + 12.0f;
             if (dx * dx + dy * dy <= rr * rr) return i;
         }
@@ -520,7 +533,8 @@ void drawText(Graphics& g, const wchar_t* text, const FontFamily& ff, float size
     g.DrawString(text, -1, &font, r, &fmt, &brush);
 }
 
-void drawButton(Graphics& g, const FontFamily& ff, const RectDef& r, const wchar_t* label, bool active, const Color& activeColor)
+void drawButton(Graphics& g, const FontFamily& ff, const RectDef& r, const wchar_t* label, bool active, const Color& activeColor,
+                float fontSize = 0.0f)
 {
     GraphicsPath path;
     roundedRect(path, r.x, r.y, r.w, r.h, 6);
@@ -528,7 +542,7 @@ void drawButton(Graphics& g, const FontFamily& ff, const RectDef& r, const wchar
     g.FillPath(&fill, &path);
     Pen edge(active ? activeColor : kPanelEdge, active ? 2.0f : 1.0f);
     g.DrawPath(&edge, &path);
-    const float size = r.h >= 34.0f ? 15.0f : 14.0f;
+    const float size = fontSize > 0.0f ? fontSize : (r.h >= 34.0f ? 15.0f : 14.0f);
     // Pilarna "<" och ">" sitter lågt i typsnittet: lyft dem 1,5 px.
     const bool arrow = label[0] != 0 && label[1] == 0 && (label[0] == L'<' || label[0] == L'>');
     const float dy = arrow ? -1.5f : 0.0f;
@@ -727,6 +741,9 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     const int mode = modeFromNorm(pv[kParamMode]);
     const int law = lawFromNorm(pv[kParamLaw]);
     const int shape = shapeFromNorm(pv[kParamShape]);
+    const int fxMode = fxModeFromNorm(pv[kParamFxMode]);
+    const int monitor = monitorFromNorm(pv[kParamMonitor]);
+    const bool fast = lesSpeedFromNorm(pv[kParamLesSpeed]) == kLesFast;
     const double depth = depthFromNorm(pv[kParamDepth]);
     const bool autoOn = depth > 0.0005;
     const double pos = p->displayPos.load();
@@ -749,8 +766,8 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"True", -1, &logoFont, PointF(21.0f, 7.0f), typo, &white);
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
-    drawText(g, L"Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.0", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
+    drawText(g, L"TruePan  v1.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -794,31 +811,41 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawSmallKnob(g, ff, ed->knobs[2], pv[kParamLowMono], L"LOW MONO", txt, !on);
     }
 
-    // --- AUTO-PAN ---
+    // --- AUTO-PAN: PAN / TREMOLO / LESLIE ---
     x0 = colX(2);
     drawPanel(g, x0, kRow1Y, kPanelW, kRow1H);
     drawText(g, L"AUTO-PAN", ff, 16, FontStyleBold, kText, x0 + 16, kRow1Y + 10, 180, StringAlignmentNear);
     {
-        const float bx = ed->shapePrev.x + ed->shapePrev.w + 4.0f;
-        const float bw = ed->shapeNext.x - bx - 4.0f;
-        drawBox(g, bx, 119.0f, bw, 34.0f);
-        drawShapeIcon(g, shape, bx + 8.0f, 127.0f, 30.0f, 18.0f, autoOn ? kOrange : kTextDim);
-        wchar_t sw[24];
-        wideFromNarrow(kShapeLongNames[shape], sw, 24);
-        drawText(g, sw, ff, 12, FontStyleBold, autoOn ? kOrange : kTextDim, bx + 40.0f, 127.0f, bw - 44.0f, StringAlignmentCenter);
-        drawButton(g, ff, ed->shapePrev, L"<", false, kCyan);
-        drawButton(g, ff, ed->shapeNext, L">", false, kCyan);
+        const wchar_t* fxLabels[kNumFxModes] = { L"PAN", L"TREM", L"LESLIE" };
+        for (int i = 0; i < kNumFxModes; ++i)
+            drawButton(g, ff, ed->btnFx[i], fxLabels[i], fxMode == i, i == kFxPan ? kCyan : kOrange, 13.0f);
     }
     drawText(g, L"DEPTH", ff, 16, FontStyleBold, kText, x0 + 16, 163, 100, StringAlignmentNear);
-    if (autoOn && p->synced.load())
-        drawText(g, L"SYNC", ff, 11, FontStyleBold, kCyan, x0 + 80, 167, 40, StringAlignmentNear);
+    if (fxMode != kFxLeslie) {
+        // Vågformsruta: klick = nästa form
+        const RectDef& sb = ed->shapeBox;
+        drawBox(g, sb.x, sb.y, sb.w, sb.h);
+        const Color& sc = autoOn ? kOrange : kTextDim;
+        drawShapeIcon(g, shape, sb.x + 6.0f, sb.y + 5.0f, 26.0f, 16.0f, sc);
+        wchar_t sw[24];
+        wideFromNarrow(kShapeLongNames[shape], sw, 24);
+        drawText(g, sw, ff, 10, FontStyleBold, sc, sb.x + 32.0f, sb.y + 6.0f, sb.w - 34.0f, StringAlignmentCenter);
+    }
     drawKnob(g, ed->knobs[3], pv[kParamDepth]);
     swprintf(txt, 64, L"%.0f %%", depth * 100.0);
     drawBigValue(g, ff, ed->knobs[3], txt, kText);
-    {
+    if (fxMode == kFxLeslie) {
+        // SPEED: SLOW (chorale) / FAST (tremolo)
+        const KnobDef& k = ed->knobs[4];
+        drawText(g, L"SPEED", ff, 12, FontStyleBold, kText, k.cx - 52.0f, k.cy - 46.0f, 104.0f, StringAlignmentCenter);
+        drawButton(g, ff, ed->btnSlow, L"SLOW", !fast, kCyan, 12.0f);
+        drawButton(g, ff, ed->btnFast, L"FAST", fast, kOrange, 12.0f);
+    } else {
         wchar_t rw[24];
         wideFromNarrow(kRateNames[rateFromNorm(pv[kParamRate])], rw, 24);
         drawSmallKnob(g, ff, ed->knobs[4], pv[kParamRate], L"RATE", rw, !autoOn);
+        if (autoOn && p->synced.load())
+            drawText(g, L"SYNC", ff, 10, FontStyleBold, kCyan, ed->knobs[4].cx - 52.0f, 283.0f, 104.0f, StringAlignmentCenter);
     }
 
     // --- OUTPUT ---
@@ -829,11 +856,22 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     swprintf(txt, 64, L"%.1f dB", outputNormToDb(pv[kParamOutput]));
     drawText(g, txt, ff, 22, FontStyleBold, kText, ed->knobs[5].cx - 70.0f, 233, 140.0f, StringAlignmentCenter);
     {
+        // Over 0 dB uppe till höger i rubrikraden
         const bool over = now < ed->overUntil;
         SolidBrush odot(over ? Color(255, 255, 70, 60) : Color(255, 50, 54, 58));
-        g.FillEllipse(&odot, x0 + 56.0f, 286.0f, 11.0f, 11.0f);
-        drawText(g, L"Over 0 dB", ff, 13, over ? FontStyleBold : FontStyleRegular,
-                 over ? Color(255, 255, 90, 80) : kTextDim, x0 + 74, 282, 110, StringAlignmentNear);
+        g.FillEllipse(&odot, x0 + 108.0f, kRow1Y + 16.0f, 10.0f, 10.0f);
+        drawText(g, L"Over 0 dB", ff, 12, over ? FontStyleBold : FontStyleRegular,
+                 over ? Color(255, 255, 90, 80) : kTextDim, x0 + 122, kRow1Y + 12.0f, 80, StringAlignmentNear);
+    }
+    {
+        // MONITOR: STEREO / MONO / MID / SIDES
+        drawButton(g, ff, ed->monPrev, L"<", false, kCyan);
+        drawButton(g, ff, ed->monNext, L">", false, kCyan);
+        const float bx = ed->monPrev.x + ed->monPrev.w + 4.0f, bw = ed->monNext.x - bx - 4.0f;
+        drawBox(g, bx, ed->monPrev.y, bw, ed->monPrev.h);
+        wchar_t mw[16];
+        wideFromNarrow(kMonitorLongNames[monitor], mw, 16);
+        drawText(g, mw, ff, 13, FontStyleBold, monitor == kMonStereo ? kCyan : kOrange, bx, ed->monPrev.y + 6.0f, bw, StringAlignmentCenter);
     }
 
     // === RAD 2 ===
@@ -897,8 +935,8 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     }
     drawButton(g, ff, ed->presetPrev, L"<", false, kCyan);
     drawButton(g, ff, ed->presetNext, L">", false, kCyan);
-    drawButton(g, ff, ed->btnReset, L"RESET", false, kCyan);
-    drawButton(g, ff, ed->btnMono, L"MONO", p->monoCheck.load() != 0, kOrange);
+    drawButton(g, ff, ed->btnSave, L"SAVE", false, kCyan);
+    drawButton(g, ff, ed->btnLoad, L"LOAD", false, kCyan);
 
     // === PAN LAW-graf ===
     drawPanel(g, 20, kGraphY, 860, kGraphH);
@@ -977,35 +1015,187 @@ void presetsChanged(Editor* ed)
     InvalidateRect(ed->hwnd, nullptr, FALSE);
 }
 
+// --- Presetmapp: Dokument\TruePan Presets (skapas automatiskt) -------------
+std::wstring presetFolder()
+{
+    wchar_t docs[MAX_PATH];
+    if (SHGetFolderPathW(nullptr, CSIDL_PERSONAL | CSIDL_FLAG_CREATE, nullptr, 0, docs) != S_OK) return std::wstring();
+    std::wstring dir = std::wstring(docs) + L"\\TruePan Presets";
+    CreateDirectoryW(dir.c_str(), nullptr); // gör inget om mappen redan finns
+    return dir;
+}
+
+bool fileExists(const std::wstring& path)
+{
+    const DWORD a = GetFileAttributesW(path.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::wstring widen(const std::string& s)
+{
+    std::wstring w;
+    for (char c : s) w += (wchar_t)(unsigned char)c;
+    return w;
+}
+
+// Filnamnet utan mapp och filändelse, som säkert presetnamn.
+std::string presetNameFromPath(const wchar_t* path)
+{
+    const wchar_t* base = path;
+    for (const wchar_t* c = path; *c; ++c) if (*c == L'\\' || *c == L'/') base = c + 1;
+    std::string out;
+    for (const wchar_t* c = base; *c; ++c) {
+        if (*c == L'.' && wcschr(c + 1, L'.') == nullptr) break; // sista punkten = filändelse
+        out += (*c >= 32 && *c < 127) ? (char)*c : '_';
+    }
+    return cleanPresetName(out);
+}
+
+// Egna presets i presetmappen, sorterade efter namn.
+std::vector<std::wstring> listUserPresets(const std::wstring& dir)
+{
+    std::vector<std::wstring> files;
+    if (dir.empty()) return files;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\*.tpp").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return files;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) files.push_back(dir + L"\\" + fd.cFileName);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(files.begin(), files.end(), [](const std::wstring& a, const std::wstring& b) { return _wcsicmp(a.c_str(), b.c_str()) < 0; });
+    return files;
+}
+
+bool readPresetFile(const std::wstring& path, float* v)
+{
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f) return false;
+    std::string text;
+    char buf[4096];
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0 && text.size() < 65536) text.append(buf, n);
+    std::fclose(f);
+    std::string name;
+    return presetFromText(text, v, &name);
+}
+
+// Laddar en egen preset. Namnet tas från filnamnet (samma som vid SAVE).
+bool loadUserPreset(Editor* ed, const std::wstring& path, bool showErrors)
+{
+    Plugin* p = ed->plugin;
+    float v[kNumParams];
+    if (!readPresetFile(path, v)) {
+        if (showErrors) MessageBoxW(ed->hwnd, L"This file is not a TruePan preset.", L"TruePan", MB_OK | MB_ICONWARNING);
+        return false;
+    }
+    p->applyValues(v, true);
+    copyString(p->presetName, presetNameFromPath(path.c_str()).c_str(), sizeof p->presetName);
+    p->program = -1;
+    presetsChanged(ed);
+    return true;
+}
+
+// Pilarna i PRESET: först fabrikspresetsen, sedan egna presets i mappen.
 void stepPreset(Editor* ed, int step)
 {
     Plugin* p = ed->plugin;
-    int pos = p->program;
-    if (pos < 0) pos = step > 0 ? -1 : kNumFactoryPresets;
-    pos += step;
-    if (pos < 0) pos = kNumFactoryPresets - 1;
-    if (pos >= kNumFactoryPresets) pos = 0;
-    p->loadFactoryPreset(pos, true);
+    const std::vector<std::wstring> user = listUserPresets(presetFolder());
+    const int total = kNumFactoryPresets + (int)user.size();
+
+    int pos = -1;
+    if (p->program >= 0) pos = p->program;
+    else {
+        for (size_t i = 0; i < user.size(); ++i)
+            if (presetNameFromPath(user[i].c_str()) == p->presetName) { pos = kNumFactoryPresets + (int)i; break; }
+    }
+    if (pos < 0) pos = step > 0 ? -1 : total;
+    for (int tries = 0; tries < total; ++tries) {
+        pos += step;
+        if (pos < 0) pos = total - 1;
+        if (pos >= total) pos = 0;
+        if (pos < kNumFactoryPresets) { p->loadFactoryPreset(pos, true); presetsChanged(ed); return; }
+        if (loadUserPreset(ed, user[pos - kNumFactoryPresets], false)) return; // hoppa över trasiga filer
+    }
+}
+
+void savePresetFile(Editor* ed)
+{
+    Plugin* p = ed->plugin;
+    const std::wstring dir = presetFolder();
+    const std::string suggestion = uniquePresetName(p->presetName, [&](const std::string& n) {
+        return !dir.empty() && fileExists(dir + L"\\" + widen(n) + L".tpp");
+    });
+    wchar_t file[MAX_PATH];
+    wideFromNarrow(suggestion.c_str(), file, MAX_PATH);
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = ed->hwnd;
+    ofn.lpstrFilter = L"TruePan preset (*.tpp)\0*.tpp\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = dir.empty() ? nullptr : dir.c_str();
+    ofn.lpstrDefExt = L"tpp";
+    ofn.lpstrTitle = L"Save TruePan preset";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetSaveFileNameW(&ofn)) return;
+
+    float v[kNumParams];
+    for (int i = 0; i < kNumParams; ++i) v[i] = p->params[i].load();
+    const std::string name = presetNameFromPath(file);
+    const std::string text = presetToText(name, v);
+    FILE* f = _wfopen(file, L"wb");
+    if (!f || std::fwrite(text.data(), 1, text.size(), f) != text.size()) {
+        if (f) std::fclose(f);
+        MessageBoxW(ed->hwnd, L"The preset could not be saved.", L"TruePan", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    std::fclose(f);
+    copyString(p->presetName, name.c_str(), sizeof p->presetName);
+    p->program = -1;
     presetsChanged(ed);
+}
+
+void loadPresetFile(Editor* ed)
+{
+    const std::wstring dir = presetFolder();
+    wchar_t file[MAX_PATH] = L"";
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = ed->hwnd;
+    ofn.lpstrFilter = L"TruePan preset (*.tpp)\0*.tpp\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = dir.empty() ? nullptr : dir.c_str();
+    ofn.lpstrTitle = L"Load TruePan preset";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&ofn)) return;
+    loadUserPreset(ed, file, true);
 }
 
 bool handleButtons(Editor* ed, int x, int y)
 {
+    Plugin* p = ed->plugin;
     if (ed->btnBalance.hit(x, y)) { setParamOnce(ed, kParamMode, 0.0f); return true; }
     if (ed->btnStereo.hit(x, y))  { setParamOnce(ed, kParamMode, 1.0f); return true; }
     if (ed->lawDown.hit(x, y))    { stepChoice(ed, kParamLaw, kNumLaws, -1, false); return true; }
     if (ed->lawUp.hit(x, y))      { stepChoice(ed, kParamLaw, kNumLaws, +1, false); return true; }
-    if (ed->shapePrev.hit(x, y))  { stepChoice(ed, kParamShape, kNumShapes, -1, true); return true; }
-    if (ed->shapeNext.hit(x, y))  { stepChoice(ed, kParamShape, kNumShapes, +1, true); return true; }
-    if (ed->presetPrev.hit(x, y)) { stepPreset(ed, -1); return true; }
-    if (ed->presetNext.hit(x, y)) { stepPreset(ed, +1); return true; }
-    if (ed->btnReset.hit(x, y))   { ed->plugin->loadFactoryPreset(0, true); presetsChanged(ed); return true; }
-    if (ed->btnMono.hit(x, y)) {
-        // MONO är bara en lyssningshjälp: ingen parameter, sparas inte
-        ed->plugin->monoCheck.store(ed->plugin->monoCheck.load() ? 0 : 1);
-        InvalidateRect(ed->hwnd, nullptr, FALSE);
+    if (ed->monPrev.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, -1, true); return true; }
+    if (ed->monNext.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, +1, true); return true; }
+    for (int i = 0; i < kNumFxModes; ++i)
+        if (ed->btnFx[i].hit(x, y)) { setParamOnce(ed, kParamFxMode, choiceNorm(i, kNumFxModes)); return true; }
+    if (ed->leslieMode()) {
+        if (ed->btnSlow.hit(x, y)) { setParamOnce(ed, kParamLesSpeed, 0.0f); return true; }
+        if (ed->btnFast.hit(x, y)) { setParamOnce(ed, kParamLesSpeed, 1.0f); return true; }
+    } else if (ed->shapeBox.hit(x, y)) {
+        stepChoice(ed, kParamShape, kNumShapes, +1, true);
         return true;
     }
+    if (ed->presetPrev.hit(x, y)) { stepPreset(ed, -1); return true; }
+    if (ed->presetNext.hit(x, y)) { stepPreset(ed, +1); return true; }
+    if (ed->btnSave.hit(x, y))    { savePresetFile(ed); return true; }
+    if (ed->btnLoad.hit(x, y))    { loadPresetFile(ed); return true; }
+    (void)p;
     return false;
 }
 

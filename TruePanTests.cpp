@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 
 using namespace truepan;
@@ -326,14 +327,143 @@ int main()
         run(o, g, m, m, gl, gr);
         check(std::fabs(db(rms(gl, 4000) / rms(m, 4000)) - 6.0) < 0.02, "OUTPUT +6 dB");
 
-        std::vector<float> l = sine(500.0, n), r(n, 0.0f);
-        Engine mc; mc.prepare(kSr);
-        mc.setMonoCheck(true);
-        Params d;
-        run(mc, d, l, r, gl, gr);
-        bool eq = true;
-        for (int i = 0; i < n; ++i) eq = eq && gl[i] == gr[i];
-        check(eq, "MONO-knappen: L och R blir lika (monokontroll)");
+        // MONITOR
+        std::vector<float> l = sine(500.0, n), r = sine(800.0, n, 0.3);
+        bool monOk = true;
+        for (int mon = 1; mon < kNumMonitors; ++mon) {
+            Params d; d.v[kParamMonitor] = choiceNorm(mon, kNumMonitors);
+            Engine mc; mc.prepare(kSr);
+            run(mc, d, l, r, gl, gr);
+            for (int i = 0; i < n; ++i) {
+                const double want = mon == kMonSides ? (l[i] - r[i]) * 0.5 : (l[i] + r[i]) * 0.5;
+                monOk = monOk && gl[i] == gr[i] && std::fabs(gl[i] - want) < 1e-6;
+            }
+        }
+        check(monOk, "MONITOR: MONO och MID = (L+R)/2, SIDES = (L-R)/2, samma i bada hogtalarna");
+        {
+            Params d; d.v[kParamMonitor] = choiceNorm(kMonSides, kNumMonitors);
+            std::vector<float> m = sine(300.0, n);
+            Engine mc; mc.prepare(kSr);
+            run(mc, d, m, m, gl, gr);
+            check(rms(gl, 0) < 1e-7, "MONITOR SIDES: monoljud blir tyst (bara skillnaden hors)");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // TREMOLO
+    // ------------------------------------------------------------------
+    {
+        const int n = 48000;
+        std::vector<float> dc(n, 0.5f), ol, orr;
+        Params p; p.v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); p.v[kParamDepth] = 1.0f;
+        Engine e; e.prepare(kSr);
+        run(e, p, dc, dc, ol, orr);
+        int maxAt = 0, minAt = 0;
+        bool same = true;
+        for (int i = 0; i < 24000; ++i) {
+            if (ol[i] > ol[maxAt]) maxAt = i;
+            if (ol[i] < ol[minAt]) minAt = i;
+            same = same && ol[i] == orr[i];
+        }
+        check(same, "TREMOLO: ingen panorering (L = R med PAN i mitten)");
+        check(std::abs(maxAt - 6000) < 500 && std::fabs(ol[maxAt] - 0.5) < 0.01 && std::abs(minAt - 18000) < 500 && ol[minAt] < 0.01,
+              "TREMOLO 1/4 vid 120 bpm, DEPTH 100 %: full niva och tyst i takt");
+        p.v[kParamDepth] = 0.5f;
+        Engine e2; e2.prepare(kSr);
+        run(e2, p, dc, dc, ol, orr);
+        double mn = 1.0;
+        for (int i = 2000; i < n; ++i) mn = std::fmin(mn, ol[i]);
+        check(std::fabs(mn - 0.25) < 0.01, "TREMOLO DEPTH 50 %: sanker som mest till halva nivan");
+        p.v[kParamShape] = choiceNorm(kShapeSquare, kNumShapes);
+        p.v[kParamDepth] = 1.0f;
+        Engine e3; e3.prepare(kSr);
+        run(e3, p, dc, dc, ol, orr);
+        double jump = 0.0;
+        for (int i = 1; i < n; ++i) jump = std::fmax(jump, std::fabs(ol[i] - ol[i - 1]));
+        check(jump < 0.01, "TREMOLO SQUARE: mjuka hopp (inga klick)");
+    }
+
+    // ------------------------------------------------------------------
+    // LESLIE
+    // ------------------------------------------------------------------
+    {
+        const int n = 48000 * 2;
+        std::vector<float> ol, orr;
+        Params p; p.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes);
+        // DEPTH 0: inget händer
+        {
+            std::vector<float> l = sine(700.0, 9600), r = sine(300.0, 9600);
+            Engine e; e.prepare(kSr);
+            run(e, p, l, r, ol, orr);
+            double d = 0.0;
+            for (size_t i = 0; i < l.size(); ++i) d = std::fmax(d, std::fmax(std::fabs(ol[i] - l[i]), std::fabs(orr[i] - r[i])));
+            check(d < 1e-6, "LESLIE med DEPTH 0: ljudet orort");
+        }
+        p.v[kParamDepth] = 1.0f;
+        p.v[kParamLesSpeed] = 1.0f;   // FAST
+        std::vector<float> m = sine(2000.0, n);
+        Engine e; e.prepare(kSr);
+        run(e, p, m, m, ol, orr);
+        check(e.leslieHornHz() > 6.0 && e.leslieDrumHz() < e.leslieHornHz() - 0.5,
+              "LESLIE FAST: hornet varvar upp pa 2 s, trumman langsammare (som originalet)");
+        // Stereo: vänster och höger olika
+        double sl = 0, sr = 0, slr = 0;
+        for (int i = n / 2; i < n; ++i) { sl += ol[i] * (double)ol[i]; sr += orr[i] * (double)orr[i]; slr += ol[i] * (double)orr[i]; }
+        const double corr = slr / std::sqrt(sl * sr);
+        check(corr < 0.95, "LESLIE: rorelse i stereo (vanster och hoger skiljer sig)");
+        check(std::fabs(db(rms(ol, n / 2) / rms(m, n / 2))) < 3.0, "LESLIE: ungefar samma niva som utan effekt (+-3 dB)");
+        // Doppler: periodtiden svajar (tonhöjden ändras)
+        double lastCross = -1.0, minP = 1e9, maxP = 0.0;
+        for (int i = n / 2; i < n; ++i) {
+            if (ol[i - 1] < 0.0f && ol[i] >= 0.0f) {
+                const double t = (i - 1) + ol[i - 1] / (double)(ol[i - 1] - ol[i]);
+                if (lastCross > 0.0) { minP = std::fmin(minP, t - lastCross); maxP = std::fmax(maxP, t - lastCross); }
+                lastCross = t;
+            }
+        }
+        check(maxP / minP > 1.02 && maxP / minP < 1.15, "LESLIE: dopplereffekt (tonhojden svajar 1-7 %)");
+        // Inbromsning till SLOW
+        p.v[kParamLesSpeed] = 0.0f;
+        std::vector<float> m2 = sine(2000.0, 48000 * 4);
+        std::vector<float> a, b;
+        run(e, p, m2, m2, a, b);
+        check(e.leslieHornHz() < 1.5 && e.leslieDrumHz() > e.leslieHornHz(), "LESLIE SLOW: hornet bromsar in pa nagra sekunder, trumman langsammare");
+        // Byte PAN -> LESLIE klickar inte
+        {
+            std::vector<float> s5 = sine(500.0, 24000), cl(24000), cr(24000);
+            Params off; off.v[kParamDepth] = 1.0f; off.v[kParamRate] = 0.0f; // långsam auto-pan
+            Params on = off; on.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes);
+            Engine c; c.prepare(kSr);
+            for (int pos = 0; pos < 24000; pos += 240) {
+                c.setParams(pos < 12000 ? off.v : on.v);
+                c.process(&s5[pos], &s5[pos], &cl[pos], &cr[pos], 240, false);
+            }
+            double jump = 0.0;
+            for (int i = 11000; i < 16000; ++i) jump = std::fmax(jump, std::fabs(cl[i] - cl[i - 1]));
+            const double maxSlope = 0.5 * 2.0 * kPi * 500.0 / kSr;
+            check(jump < maxSlope * 2.0, "byte fran AUTO-PAN till LESLIE ger inget klick");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Egna presetfiler
+    // ------------------------------------------------------------------
+    {
+        float v[kNumParams], back[kNumParams];
+        for (int i = 0; i < kNumParams; ++i) v[i] = (float)((i * 37 % 100) / 100.0);
+        const std::string text = presetToText("My Wide Pan", v);
+        std::string name;
+        bool ok = presetFromText(text, back, &name) && name == "My Wide Pan";
+        for (int i = 0; i < kNumParams; ++i) ok = ok && std::fabs(back[i] - v[i]) < 1e-6;
+        check(ok, "preset sparas som text och lases tillbaka exakt (alla parametrar + namn)");
+
+        check(!presetFromText("TrueSub preset 2\r\nName=x\r\n", back, &name), "fil som inte ar TruePan-preset avvisas");
+        ok = presetFromText("TruePan preset 1\nName=Odd\nPan=0.25\nWidth=7\nJunk line\nUnknown=0.3\n", back, &name);
+        check(ok && name == "Odd" && back[kParamPan] == 0.25f && back[kParamWidth] == defaultParam(kParamWidth)
+              && back[kParamOutput] == defaultParam(kParamOutput), "trasiga rader och varden utanfor 0..1 ignoreras, saknade far standard");
+        check(cleanPresetName("A=B\x01\xC3\xA5") == "AB__" && cleanPresetName("") == "Untitled", "presetnamn rensas fran konstiga tecken");
+        const std::string u = uniquePresetName("Wide", [](const std::string& s) { return s == "Wide" || s == "Wide 2"; });
+        check(u == "Wide 3", "SAVE foreslar ett namn som inte finns (Wide 3)");
     }
 
     // ------------------------------------------------------------------
@@ -374,7 +504,10 @@ int main()
         paramDisplayText(kParamLaw, defaultParam(kParamLaw), t, sizeof t); ok = ok && std::strcmp(t, "-3.0") == 0;
         paramDisplayText(kParamLowMono, 0.0f, t, sizeof t);  ok = ok && std::strcmp(t, "Off") == 0;
         paramDisplayText(kParamOutput, defaultParam(kParamOutput), t, sizeof t); ok = ok && std::strcmp(t, "0.0") == 0;
-        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0");
+        paramDisplayText(kParamMonitor, 1.0f, t, sizeof t);  ok = ok && std::strcmp(t, "Sides") == 0;
+        paramDisplayText(kParamFxMode, 1.0f, t, sizeof t);   ok = ok && std::strcmp(t, "Leslie") == 0;
+        paramDisplayText(kParamLesSpeed, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "Fast") == 0;
+        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, Fast");
 
         bool namesShort = true;
         for (int i = 0; i < kNumParams; ++i) namesShort = namesShort && std::strlen(kParamNames[i]) <= 7;
@@ -390,7 +523,7 @@ int main()
         float v0[kNumParams];
         factoryPresetValues(0, v0);
         for (int k = 0; k < kNumParams; ++k) presetsOk = presetsOk && v0[k] == defaultParam(k);
-        check(presetsOk, "10 fabrikspresets med giltiga varden; 'Center' = standard");
+        check(presetsOk && kNumFactoryPresets == 13, "13 fabrikspresets med giltiga varden; 'Center' = standard");
     }
 
     // ------------------------------------------------------------------
@@ -400,6 +533,7 @@ int main()
         Engine e; e.prepare(kSr);
         Params p;
         p.v[kParamLowMono] = lowMonoNorm(120.0); p.v[kParamDepth] = 0.7f; p.v[kParamWidth] = 0.7f;
+        p.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes);
         std::vector<float> l = sine(300.0, 512), r = sine(310.0, 512), ol(512), orr(512);
         const auto t0 = std::chrono::steady_clock::now();
         for (int b = 0; b < 48000 * 10 / 512; ++b) {

@@ -94,13 +94,14 @@ int main()
 
     // Parametrar
     char text[64] = {};
-    const char* expectedNames[kNumParams] = { "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output" };
-    bool namesOk = e->numParams == 9;
+    const char* expectedNames[kNumParams] = { "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
+                                              "Monitor", "APMode", "LesSpd" };
+    bool namesOk = e->numParams == 12;
     for (int i = 0; i < kNumParams; ++i) {
         e->dispatcher(e, effGetParamName, i, 0, text, 0);
         namesOk = namesOk && std::strcmp(text, expectedNames[i]) == 0;
     }
-    check(namesOk, "9 parametrar med stabila namn och index (max 7 tecken)");
+    check(namesOk, "12 parametrar med stabila namn och index (de 9 forsta som i v1.0)");
     check(e->dispatcher(e, effCanBeAutomated, 0, 0, nullptr, 0) == 1 && e->dispatcher(e, effCanBeAutomated, 99, 0, nullptr, 0) == 0,
           "parametrarna kan automatiseras");
 
@@ -159,6 +160,23 @@ int main()
     check(e2->getParameter(e2, kParamPan) == 1.0f && e2->getParameter(e2, kParamWidth) == 0.8f &&
           e2->getParameter(e2, kParamMode) == 0.0f && e2->getParameter(e2, kParamOutput) == outputDbToNorm(-6.0),
           "alla parametrar aterstalls efter oppning");
+
+    // Projekt sparat med v1.0 (9 parametrar): nya parametrar får standardvärden
+    {
+        std::vector<unsigned char> v10(48 + 9 * 4, 0);
+        std::memcpy(v10.data(), "TPst", 4);
+        const uint32_t ver = 1, cnt = 9; const int32_t prog = -1;
+        std::memcpy(v10.data() + 4, &ver, 4); std::memcpy(v10.data() + 8, &cnt, 4); std::memcpy(v10.data() + 12, &prog, 4);
+        float vals[9]; for (int i = 0; i < 9; ++i) vals[i] = defaultParam(i);
+        vals[kParamPan] = 0.3f;
+        std::memcpy(v10.data() + 48, vals, sizeof vals);
+        AEffect* o = VSTPluginMain(hostCallback);
+        o->setParameter(o, kParamMonitor, 1.0f); o->setParameter(o, kParamFxMode, 1.0f);
+        o->dispatcher(o, effSetChunk, 0, (VstIntPtr)v10.size(), v10.data(), 0);
+        check(o->getParameter(o, kParamPan) == 0.3f && o->getParameter(o, kParamMonitor) == 0.0f && o->getParameter(o, kParamFxMode) == 0.0f,
+              "projekt fran v1.0 oppnas: MONITOR STEREO, AUTO-PAN-lage PAN");
+        o->dispatcher(o, effClose, 0, 0, nullptr, 0);
+    }
 
     // Kortare chunk (framtida/äldre version med färre parametrar): resten får standardvärden
     {

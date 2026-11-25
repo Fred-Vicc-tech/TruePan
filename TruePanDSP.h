@@ -4,8 +4,10 @@
 // Signalväg per sampel:
 //   in L/R -> [LOW MONO: delning i bas (mono, i mitten) och resten]
 //          -> WIDTH (mid/side) -> MODE (BALANCE eller STEREO)
+//          -> [LESLIE: roterande högtalare]
 //          -> panorering med vald PAN LAW (PAN + AUTO-PAN)
-//          -> basen läggs tillbaka i mitten -> OUTPUT
+//          -> basen läggs tillbaka i mitten -> [TREMOLO] -> OUTPUT
+//          -> MONITOR (STEREO / MONO / MID / SIDES)
 //
 // Grundregel: med standardvärden (PAN i mitten, WIDTH 100 %, LOW MONO av,
 // AUTO-PAN 0 %, OUTPUT 0 dB) går ljudet igenom oförändrat.
@@ -13,7 +15,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 namespace truepan {
 
@@ -32,15 +36,19 @@ enum {
     kParamRate,
     kParamShape,
     kParamOutput,
+    kParamMonitor,      // nya parametrar läggs alltid sist
+    kParamFxMode,
+    kParamLesSpeed,
     kNumParams
 };
 
 // Högst 7 tecken (Live 9 visar inte fler).
 static const char* const kParamNames[kNumParams] = {
-    "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output"
+    "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
+    "Monitor", "APMode", "LesSpd"
 };
 static const char* const kParamLabels[kNumParams] = {
-    "", "%", "", "dB", "Hz", "%", "", "", "dB"
+    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", ""
 };
 
 // --- Val (knappar/väljare) ------------------------------------------------
@@ -48,10 +56,16 @@ enum { kModeBalance = 0, kModeStereo = 1 };
 enum { kLaw0 = 0, kLaw3, kLaw45, kLaw6, kNumLaws };
 enum { kShapeSine = 0, kShapeTriangle, kShapeSquare, kNumShapes };
 const int kNumRates = 12;
+enum { kMonStereo = 0, kMonMono, kMonMid, kMonSides, kNumMonitors };
+enum { kFxPan = 0, kFxTremolo, kFxLeslie, kNumFxModes };
+enum { kLesSlow = 0, kLesFast };
 
 static const char* const kLawNames[kNumLaws] = { "0.0", "-3.0", "-4.5", "-6.0" };
 static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square" };
 static const char* const kShapeLongNames[kNumShapes] = { "SINE", "TRIANGLE", "SQUARE" };
+static const char* const kMonitorNames[kNumMonitors] = { "Stereo", "Mono", "Mid", "Sides" };
+static const char* const kMonitorLongNames[kNumMonitors] = { "STEREO", "MONO", "MID", "SIDES" };
+static const char* const kFxNames[kNumFxModes] = { "Pan", "Trem", "Leslie" };
 static const char* const kRateNames[kNumRates] = {
     "4 Bars", "2 Bars", "1 Bar", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"
 };
@@ -83,6 +97,9 @@ inline int modeFromNorm(float n) { return n >= 0.5f ? kModeStereo : kModeBalance
 inline int lawFromNorm(float n) { return choiceFromNorm(n, kNumLaws); }
 inline int shapeFromNorm(float n) { return choiceFromNorm(n, kNumShapes); }
 inline int rateFromNorm(float n) { return choiceFromNorm(n, kNumRates); }
+inline int monitorFromNorm(float n) { return choiceFromNorm(n, kNumMonitors); }
+inline int fxModeFromNorm(float n) { return choiceFromNorm(n, kNumFxModes); }
+inline int lesSpeedFromNorm(float n) { return n >= 0.5f ? kLesFast : kLesSlow; }
 
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
@@ -118,6 +135,9 @@ inline float defaultParam(int index)
     case kParamRate:    return choiceNorm(5, kNumRates);        // 1/4
     case kParamShape:   return choiceNorm(kShapeSine, kNumShapes);
     case kParamOutput:  return outputDbToNorm(0.0);
+    case kParamMonitor: return 0.0f;                            // STEREO
+    case kParamFxMode:  return 0.0f;                            // PAN
+    case kParamLesSpeed: return 0.0f;                           // SLOW
     default:            return 0.0f;
     }
 }
@@ -146,6 +166,9 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     case kParamRate:    std::snprintf(out, max, "%s", kRateNames[rateFromNorm(n)]); break;
     case kParamShape:   std::snprintf(out, max, "%s", kShapeNames[shapeFromNorm(n)]); break;
     case kParamOutput:  std::snprintf(out, max, "%.1f", outputNormToDb(n)); break;
+    case kParamMonitor: std::snprintf(out, max, "%s", kMonitorNames[monitorFromNorm(n)]); break;
+    case kParamFxMode:  std::snprintf(out, max, "%s", kFxNames[fxModeFromNorm(n)]); break;
+    case kParamLesSpeed: std::snprintf(out, max, "%s", lesSpeedFromNorm(n) == kLesFast ? "Fast" : "Slow"); break;
     default:            std::snprintf(out, max, "-"); break;
     }
 }
@@ -245,6 +268,93 @@ struct LR4
 };
 
 // ---------------------------------------------------------------------------
+// LESLIE: roterande högtalare. Ljudet delas vid 800 Hz i bas-trumma och
+// diskant-horn som roterar med var sin hastighet. Två mikrofoner (vänster och
+// höger) hör både nivåskiftningar och dopplereffekt (tonhöjden svajar).
+// SLOW (chorale) / FAST (tremolo); hornet växlar fart snabbt, trumman långsamt,
+// precis som på originalet.
+// ---------------------------------------------------------------------------
+class Leslie
+{
+public:
+    static const int kBufSize = 2048;   // räcker till 768 kHz (högst 2,2 ms fördröjning)
+
+    void prepare(double sr)
+    {
+        sr_ = sr;
+        lpDrum_.set(false, 800.0, sr); hpHorn_.set(true, 800.0, sr);
+        reset();
+    }
+    void reset()
+    {
+        lpDrum_.reset(); hpHorn_.reset();
+        std::memset(horn_, 0, sizeof horn_);
+        std::memset(drum_, 0, sizeof drum_);
+        w_ = 0;
+    }
+    void setFast(bool fast) { fast_ = fast; }
+
+    // Hastigheten och vinklarna går alltid, även när effekten inte hörs,
+    // så att den låter naturligt när man slår på den.
+    void advance()
+    {
+        const double hornT = fast_ ? 6.75 : 0.83, drumT = fast_ ? 5.9 : 0.70;
+        const double hornTau = hornT > hornHz_ ? 0.8 : 1.2;   // sekunder
+        const double drumTau = drumT > drumHz_ ? 3.5 : 4.5;
+        hornHz_ += (hornT - hornHz_) * (1.0 - std::exp(-1.0 / (hornTau * sr_)));
+        drumHz_ += (drumT - drumHz_) * (1.0 - std::exp(-1.0 / (drumTau * sr_)));
+        hornAng_ += 2.0 * kPi * hornHz_ / sr_;
+        drumAng_ += 2.0 * kPi * drumHz_ / sr_;
+        if (hornAng_ > 2.0 * kPi) hornAng_ -= 2.0 * kPi;
+        if (drumAng_ > 2.0 * kPi) drumAng_ -= 2.0 * kPi;
+    }
+
+    void process(double in, double& outL, double& outR)
+    {
+        horn_[w_] = hpHorn_.process(in);
+        drum_[w_] = lpDrum_.process(in);
+        const double micL = -1.2, micR = 1.2;          // mikrofonerna ca 70 grader åt var sida
+        outL = rotor(horn_, hornAng_ - micL, 0.0005, 0.6) + rotor(drum_, drumAng_ - micL, 0.0002, 0.3);
+        outR = rotor(horn_, hornAng_ - micR, 0.0005, 0.6) + rotor(drum_, drumAng_ - micR, 0.0002, 0.3);
+        w_ = (w_ + 1) & (kBufSize - 1);
+    }
+
+    double hornHz() const { return hornHz_; }
+    double drumHz() const { return drumHz_; }
+
+private:
+    // Ett rotor-ljud sett från en mikrofon: avståndet ändras (fördröjning =
+    // doppler) och nivån är högst när rotorn pekar mot mikrofonen.
+    double rotor(const double* buf, double ang, double depthSec, double amDepth) const
+    {
+        const double c = std::cos(ang);
+        const double delay = (0.0012 + depthSec * (1.0 - c)) * sr_;
+        const double gain = (1.0 + amDepth * c) / (1.0 + amDepth * 0.5);
+        return read(buf, delay) * gain;
+    }
+    // Läs med bråkdels-fördröjning (Hermite-interpolation)
+    double read(const double* buf, double delay) const
+    {
+        const int di = (int)delay;
+        const double f = delay - di;
+        const int m = kBufSize - 1;
+        const double y0 = buf[(w_ - di + 1) & m], y1 = buf[(w_ - di) & m];
+        const double y2 = buf[(w_ - di - 1) & m], y3 = buf[(w_ - di - 2) & m];
+        const double c1 = 0.5 * (y2 - y0);
+        const double c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        const double c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        return ((c3 * f + c2) * f + c1) * f + y1;
+    }
+
+    double sr_ = 44100.0;
+    LR4 lpDrum_, hpHorn_;
+    double horn_[kBufSize], drum_[kBufSize];
+    int w_ = 0;
+    bool fast_ = false;
+    double hornHz_ = 0.83, drumHz_ = 0.70, hornAng_ = 0.0, drumAng_ = 1.0;
+};
+
+// ---------------------------------------------------------------------------
 // Motorn
 // ---------------------------------------------------------------------------
 class Engine
@@ -258,6 +368,7 @@ public:
         smoothCoef_ = 1.0 - std::exp(-1.0 / (0.005 * sr_));   // 5 ms (pan, bredd, nivå)
         fadeCoef_ = 1.0 - std::exp(-1.0 / (0.020 * sr_));     // 20 ms (LOW MONO av/på)
         filterHz_ = -1.0;
+        leslie_.prepare(sr_);
         reset();
     }
 
@@ -265,6 +376,7 @@ public:
     {
         for (int i = 0; i < 2; ++i) { hpL_[i].reset(); hpR_[i].reset(); }
         lpM_.reset();
+        leslie_.reset();
         snap_ = true;
         peakL_ = peakR_ = 0.0;
     }
@@ -282,9 +394,10 @@ public:
         rate_ = rateFromNorm(n[kParamRate]);
         shape_ = shapeFromNorm(n[kParamShape]);
         outGain_ = dbToGain(outputNormToDb(n[kParamOutput]));
+        monitor_ = monitorFromNorm(n[kParamMonitor]);
+        fxMode_ = fxModeFromNorm(n[kParamFxMode]);
+        leslie_.setFast(lesSpeedFromNorm(n[kParamLesSpeed]) == kLesFast);
     }
-
-    void setMonoCheck(bool on) { monoCheck_ = on; }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
     void setTransport(bool tempoValid, double tempo, bool playing, bool ppqValid, double ppq)
@@ -320,9 +433,15 @@ public:
             const double l = inL ? inL[i] : 0.0;
             const double r = inR ? inR[i] : 0.0;
 
-            // Position: PAN + AUTO-PAN
+            // Position: PAN + AUTO-PAN. TREMOLO: nivån svajar i takt.
             pos = pan_;
-            if (depth_ > 0.0) pos = clampd(pan_ + depth_ * lfoValue(shape_, phase_), -1.0, 1.0);
+            double ttrem = 1.0;
+            if (depth_ > 0.0) {
+                const double lfo = lfoValue(shape_, phase_);
+                if (fxMode_ == kFxPan) pos = clampd(pan_ + depth_ * lfo, -1.0, 1.0);
+                else if (fxMode_ == kFxTremolo) ttrem = 1.0 - depth_ * (0.5 - 0.5 * lfo);
+            }
+            const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
             phase_ += phaseInc;
             if (phase_ >= 1.0) phase_ -= std::floor(phase_);
 
@@ -335,6 +454,7 @@ public:
 
             if (snap_) {
                 gl_ = tgl; gr_ = tgr; side_ = tside; out_ = outGain_; low_ = tlow;
+                trem_ = ttrem; les_ = tles;
                 snap_ = false;
             } else {
                 gl_ += (tgl - gl_) * smoothCoef_;
@@ -343,6 +463,9 @@ public:
                 out_ += (outGain_ - out_) * smoothCoef_;
                 low_ += (tlow - low_) * fadeCoef_;
                 if (std::fabs(low_ - tlow) < 1e-6) low_ = tlow;
+                trem_ += (ttrem - trem_) * smoothCoef_;
+                les_ += (tles - les_) * fadeCoef_;
+                if (std::fabs(les_ - tles) < 1e-6) les_ = tles;
             }
 
             // LOW MONO: basen (mono) delas av och läggs i mitten efter panoreringen.
@@ -365,10 +488,26 @@ public:
                 yr = m - s;
             }
 
-            // Panorering + bas i mitten + OUTPUT
-            double ol = (yl * gl_ + bass) * out_;
-            double orr = (yr * gr_ + bass) * out_;
-            if (monoCheck_) { const double m = (ol + orr) * 0.5; ol = orr = m; }
+            // LESLIE (DEPTH = andel effekt). Rotorerna snurrar alltid.
+            // Körs alltid (fördröjningen hålls fylld), så att av/på inte klickar.
+            leslie_.advance();
+            {
+                double ll, lr;
+                leslie_.process((yl + yr) * 0.5, ll, lr);
+                if (les_ > 0.0) {
+                    yl += (ll - yl) * les_;
+                    yr += (lr - yr) * les_;
+                }
+            }
+
+            // Panorering + bas i mitten + TREMOLO + OUTPUT
+            const double g = trem_ * out_;
+            double ol = (yl * gl_ + bass) * g;
+            double orr = (yr * gr_ + bass) * g;
+
+            // MONITOR: lyssna på hela, mono, bara mitten eller bara sidorna
+            if (monitor_ == kMonMono || monitor_ == kMonMid) { const double m = (ol + orr) * 0.5; ol = orr = m; }
+            else if (monitor_ == kMonSides) { const double s = (ol - orr) * 0.5; ol = orr = s; }
 
             if (accumulate) { outL[i] += (float)ol; if (outR) outR[i] += (float)orr; }
             else            { outL[i] = (float)ol;  if (outR) outR[i] = (float)orr; }
@@ -390,6 +529,8 @@ public:
     double phase() const { return phase_; }
     double tempo() const { return tempo_; }
     double sampleRate() const { return sr_; }
+    double leslieHornHz() const { return leslie_.hornHz(); }
+    double leslieDrumHz() const { return leslie_.drumHz(); }
 
 private:
     double sr_ = 44100.0;
@@ -398,10 +539,11 @@ private:
     // parametrar
     double pan_ = 0.0, width_ = 1.0, depth_ = 0.0, outGain_ = 1.0, lowHz_ = 120.0;
     int mode_ = kModeStereo, law_ = kLaw3, rate_ = 5, shape_ = kShapeSine;
-    bool lowOn_ = false, monoCheck_ = false;
+    int monitor_ = kMonStereo, fxMode_ = kFxPan;
+    bool lowOn_ = false;
 
     // utjämnade värden
-    double gl_ = 1.0, gr_ = 1.0, side_ = 1.0, out_ = 1.0, low_ = 0.0;
+    double gl_ = 1.0, gr_ = 1.0, side_ = 1.0, out_ = 1.0, low_ = 0.0, trem_ = 1.0, les_ = 0.0;
     bool snap_ = true;
 
     // AUTO-PAN
@@ -413,6 +555,8 @@ private:
     LR4 lpM_;
     double filterHz_ = -1.0;
 
+    Leslie leslie_;
+
     // visning
     double displayPos_ = 0.0, peakL_ = 0.0, peakR_ = 0.0;
 };
@@ -420,13 +564,14 @@ private:
 // ---------------------------------------------------------------------------
 // Fabrikspresets (syns som program i Lives presetlista och i fönstret)
 // ---------------------------------------------------------------------------
-const int kNumFactoryPresets = 10;
+const int kNumFactoryPresets = 13;
 
 inline const char* factoryPresetName(int i)
 {
     static const char* const names[kNumFactoryPresets] = {
         "Center", "Hard Left", "Hard Right", "Wide Stereo", "Mono",
-        "Auto-Pan 1/4", "Auto-Pan 1/8 Tri", "Ping-Pong 1/16", "Slow Sweep 2 Bars", "Bass Mono 120"
+        "Auto-Pan 1/4", "Auto-Pan 1/8 Tri", "Ping-Pong 1/16", "Slow Sweep 2 Bars", "Bass Mono 120",
+        "Tremolo 1/8", "Leslie Slow", "Leslie Fast"
     };
     return (i >= 0 && i < kNumFactoryPresets) ? names[i] : "";
 }
@@ -445,6 +590,9 @@ inline void factoryPresetValues(int i, float* v)
             v[kParamMode] = 0.0f; break;
     case 8: v[kParamDepth] = 0.7f; v[kParamRate] = choiceNorm(1, kNumRates); break;
     case 9: v[kParamLowMono] = lowMonoNorm(120.0); v[kParamWidth] = widthNorm(1.2); break;
+    case 10: v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); v[kParamDepth] = 0.6f; v[kParamRate] = choiceNorm(7, kNumRates); break;
+    case 11: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = 0.0f; break;
+    case 12: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = 1.0f; break;
     default: break;
     }
 }
@@ -459,6 +607,83 @@ inline void cleanName(const char* in, char* out, size_t max)
     }
     out[j] = 0;
     if (j == 0 && max > 1) std::snprintf(out, max, "Preset");
+}
+
+// ---------------------------------------------------------------------------
+// Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
+// ---------------------------------------------------------------------------
+static const char* const kPresetHeader = "TruePan preset 1";
+
+inline std::string cleanPresetName(const std::string& in)
+{
+    std::string out;
+    for (char c : in) {
+        const unsigned char u = (unsigned char)c;
+        if (u >= 32 && u < 127 && c != '=') out += c;
+        else if (u >= 128) out += '_';
+        if (out.size() >= 31) break;
+    }
+    return out.empty() ? std::string("Untitled") : out;
+}
+
+inline std::string presetToText(const std::string& name, const float* v)
+{
+    std::string t = kPresetHeader;
+    t += "\r\nName=" + cleanPresetName(name) + "\r\n";
+    char buf[64];
+    for (int i = 0; i < kNumParams; ++i) {
+        std::snprintf(buf, sizeof buf, "%s=%.6f\r\n", kParamNames[i], (double)v[i]);
+        t += buf;
+    }
+    return t;
+}
+
+// Föreslår ett namn som inte redan används: "Wide", "Wide 2", "Wide 3" ...
+template <typename ExistsFn>
+inline std::string uniquePresetName(const std::string& base, ExistsFn exists)
+{
+    const std::string clean = cleanPresetName(base);
+    if (!exists(clean)) return clean;
+    std::string stem = clean;
+    int n = 2;
+    const size_t sp = clean.find_last_of(' ');
+    if (sp != std::string::npos && sp + 1 < clean.size()) {
+        bool digits = true;
+        for (size_t i = sp + 1; i < clean.size(); ++i) digits = digits && clean[i] >= '0' && clean[i] <= '9';
+        if (digits && clean.size() - sp - 1 <= 3) { stem = clean.substr(0, sp); n = std::atoi(clean.c_str() + sp + 1) + 1; }
+    }
+    for (; n < 1000; ++n) {
+        const std::string candidate = stem + " " + std::to_string(n);
+        if (!exists(candidate)) return candidate;
+    }
+    return clean;
+}
+
+// Läser en preset. Börjar från standardvärden; giltiga rader skriver över.
+// Returnerar false om texten inte är en TruePan-preset.
+inline bool presetFromText(const std::string& text, float* v, std::string* name)
+{
+    if (text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
+    if (name) *name = "Untitled";
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find_first_of("\r\n", pos);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = text.substr(pos, end - pos);
+        pos = end + 1;
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string key = line.substr(0, eq), val = line.substr(eq + 1);
+        if (key == "Name") { if (name) *name = cleanPresetName(val); continue; }
+        for (int i = 0; i < kNumParams; ++i) {
+            if (key != kParamNames[i]) continue;
+            char* endp = nullptr;
+            const double d = std::strtod(val.c_str(), &endp);
+            if (endp != val.c_str() && d >= 0.0 && d <= 1.0) v[i] = (float)d;   // ogiltigt ignoreras
+        }
+    }
+    return true;
 }
 
 } // namespace truepan
