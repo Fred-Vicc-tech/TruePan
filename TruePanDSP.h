@@ -962,16 +962,28 @@ public:
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
-    void setTransport(bool tempoValid, double tempo, bool playing, bool ppqValid, double ppq)
+    // Med loop i Live (cycleOn) hoppar positionen tillbaka till loopens start
+    // på exakt rätt sampel, även mitt i ett block, så att mönstret börjar om rätt.
+    void setTransport(bool tempoValid, double tempo, bool playing, bool ppqValid, double ppq,
+                      bool cycleOn = false, double cycleStart = 0.0, double cycleEnd = 0.0)
     {
         if (tempoValid && tempo >= 20.0 && tempo <= 999.0) tempo_ = tempo;
         if (playing && ppqValid && std::isfinite(ppq)) {
-            const double ph = ppq / kRateBeats[rate_];
-            phase_ = ph - kLfoCycle * std::floor(ph / kLfoCycle);   // följer takten (4 perioder)
+            beatPos_ = ppq;
+            loopOn_ = cycleOn && std::isfinite(cycleStart) && std::isfinite(cycleEnd) && cycleEnd - cycleStart > 1e-6
+                      && ppq < cycleEnd + 1e-9;
+            loopStart_ = cycleStart; loopEnd_ = cycleEnd;
+            phase_ = phaseFromBeats(beatPos_);
             synced_ = true;
         } else {
             synced_ = false;
+            loopOn_ = false;
         }
+    }
+    double phaseFromBeats(double beats) const
+    {
+        const double ph = beats / kRateBeats[rate_];
+        return ph - kLfoCycle * std::floor(ph / kLfoCycle);   // följer takten
     }
 
     // inL/inR får vara samma minne som outL/outR (Live gör ibland så).
@@ -1001,6 +1013,7 @@ public:
         const double tdist = kDistRef / distSm_;      // avståndslagen 1/r
 
         const double phaseInc = tempo_ / 60.0 / sr_ / kRateBeats[rate_];
+        const double beatInc = tempo_ / 60.0 / sr_;
         {
             // LESLIE: originalfart (STOP/CHORALE/TREMOLO) eller tempoläge
             const LesModelSpec& sp = kLesModels[leslie_.model()];
@@ -1038,8 +1051,15 @@ public:
                 }
             }
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
-            phase_ += phaseInc;
-            if (phase_ >= kLfoCycle) phase_ -= kLfoCycle * std::floor(phase_ / kLfoCycle);
+            if (synced_) {
+                // I takt med Live: räkna fram taktpositionen per sampel (loopen tas med)
+                beatPos_ += beatInc;
+                if (loopOn_ && beatPos_ >= loopEnd_) beatPos_ = loopStart_ + (beatPos_ - loopEnd_);
+                phase_ = phaseFromBeats(beatPos_);
+            } else {
+                phase_ += phaseInc;
+                if (phase_ >= kLfoCycle) phase_ -= kLfoCycle * std::floor(phase_ / kLfoCycle);
+            }
 
             // Målvärden
             double tgl, tgr;
@@ -1165,7 +1185,8 @@ private:
     bool snap_ = true;
 
     // AUTO-PAN
-    double tempo_ = 120.0, phase_ = 0.0;
+    double tempo_ = 120.0, phase_ = 0.0, beatPos_ = 0.0, loopStart_ = 0.0, loopEnd_ = 0.0;
+    bool loopOn_ = false;
     bool synced_ = false;
 
     // LOW MONO

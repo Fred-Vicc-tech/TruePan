@@ -146,6 +146,8 @@ enum
 
     // tidsinfo-flaggor
     kVstTransportPlaying = 1 << 1,
+    kVstTransportCycleActive = 1 << 3,   // loop (Lives loop-knapp) på
+    kVstCyclePosValid    = 1 << 12,      // loopens start och slut finns
     kVstPpqPosValid      = 1 << 9,
     kVstTempoValid       = 1 << 10,
 

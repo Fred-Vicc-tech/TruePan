@@ -1,5 +1,11 @@
 # Ändringslogg
 
+## v2.0.1 – Inget hack när Lives loop börjar om (2026-11-26)
+- När Live spelar med loop hoppade AUTO-PAN-mönstret (PARADIDDLE m.fl.) till rätt läge först i nästa
+  ljudblock (upp till ca 12 ms för sent). Det gav ett hack vid varje nytt varv. Nu läses loopens start
+  och slut från Live och mönstret börjar om på exakt rätt sampel. Nytt test jämför mot en sampelexakt
+  referens (avvikelse förut 0,2, nu under 0,003).
+
 ## v2.0 – Rudiment (2026-11-26)
 - Fem nya rudiment i AUTO-PAN: DOUBLE STROKE (R R L L), PARADIDDLE-DIDDLE (R L R R L L),
   INV. PARADIDDLE (R L L R L R R L), SIX STROKE ROLL (>R l l r r >L, betonade ändslag) och

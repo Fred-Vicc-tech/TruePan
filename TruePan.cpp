@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2000;           // TruePan 2.0
+const VstInt32 kVersion = 2010;           // TruePan 2.0.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -154,10 +154,10 @@ void processBlock(Plugin* p, float** inputs, float** outputs, VstInt32 n, bool a
     p->engine.setParams(v);
 
     // Tempo och position från Live (AUTO-PAN följer takten när Live spelar)
-    bool tempoValid = false, playing = false, ppqValid = false;
-    double tempo = 120.0, ppq = 0.0;
+    bool tempoValid = false, playing = false, ppqValid = false, cycleOn = false;
+    double tempo = 120.0, ppq = 0.0, cycStart = 0.0, cycEnd = 0.0;
     if (p->host) {
-        const VstIntPtr r = p->host(&p->effect, audioMasterGetTime, 0, kVstTempoValid | kVstPpqPosValid, nullptr, 0.0f);
+        const VstIntPtr r = p->host(&p->effect, audioMasterGetTime, 0, kVstTempoValid | kVstPpqPosValid | kVstCyclePosValid, nullptr, 0.0f);
         const VstTimeInfo* ti = reinterpret_cast<const VstTimeInfo*>(r);
         if (ti) {
             tempoValid = (ti->flags & kVstTempoValid) != 0;
@@ -165,9 +165,12 @@ void processBlock(Plugin* p, float** inputs, float** outputs, VstInt32 n, bool a
             playing = (ti->flags & kVstTransportPlaying) != 0;
             ppqValid = (ti->flags & kVstPpqPosValid) != 0;
             ppq = ti->ppqPos;
+            cycleOn = (ti->flags & kVstTransportCycleActive) && (ti->flags & kVstCyclePosValid);
+            cycStart = ti->cycleStartPos;
+            cycEnd = ti->cycleEndPos;
         }
     }
-    p->engine.setTransport(tempoValid, tempo, playing, ppqValid, ppq);
+    p->engine.setTransport(tempoValid, tempo, playing, ppqValid, ppq, cycleOn, cycStart, cycEnd);
 
     const float* inL = inputs ? inputs[0] : nullptr;
     const float* inR = inputs ? inputs[1] : nullptr;
@@ -808,7 +811,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.0", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.0.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
