@@ -40,6 +40,9 @@ static const ManualPara kManual[] = {
                 L"(R R L L), PARADIDDLE-DIDDLE (R L R R L L), INV. PARADIDDLE (R L L R L R R L), SIX STROKE ROLL (accented R l l r r L) and "
                 L"FLAM (a soft grace note on the opposite side just before each stroke) play every stroke as a separate pulse; RATE is the "
                 L"length of one stroke. PARAVARIANT plays the paradiddle without returning to the center between strokes." },
+    { kManBody, L"In TREM the sound stays in the center, so the two hands are told apart by their tone instead: left-hand strokes "
+                L"sound slightly darker and right-hand strokes slightly brighter, and the first stroke of each group is accented "
+                L"(unaccented strokes are 4 dB softer). Both follow DEPTH." },
     { kManNote, L"Tip: patterns with 6 strokes fit triplet rates (1/8T, 1/16T) and 6/8 time." },
 
     { kManHead, L"AUTO-PAN: LESLIE" },

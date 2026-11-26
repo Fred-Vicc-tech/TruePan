@@ -1,5 +1,10 @@
 # Ändringslogg
 
+## v2.5.2 – Rudimenten hörs i TREM (2026-11-26)
+- TREM med PARADIDDLE och rudimenten: vänster hand låter lite mörkare och höger hand lite ljusare
+  (diskanten över ca 1,2 kHz −/+ 3 dB vid DEPTH 100 %).
+- Första slaget i varje grupp betonas; obetonade slag är 4 dB svagare (följer DEPTH).
+
 ## v2.5.1 – PAN går att dra i STEREO FIELD (2026-11-26)
 - Klicka eller dra i sidled på STEREO FIELD-banan för att flytta PAN (snäpper till C nära mitten,
   dubbelklick = C). Muspekaren blir en sidledspil över banan.

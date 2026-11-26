@@ -139,6 +139,16 @@ static const double kParadiddle[8] = { 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.
 // (R-R blir ett längre slag). Hela mönstret tar 4 RATE-perioder.
 const double kLfoCycle = 24.0;  // AUTO-PAN-fasen räknas över 24 perioder (delbart med 2, 4, 6 och 8 slag)
 
+// TREM: händernas karaktär. Vänster hand lite mörkare, höger lite ljusare
+// (diskanten över ca 1,2 kHz -/+ 3 dB vid DEPTH 100 %), och obetonade slag
+// -4 dB, så att mönstret hörs fast ljudet står i mitten.
+const double kHandTiltDb = 3.0, kHandTiltHz = 1200.0, kUnaccentDb = -4.0;
+// Betonade slag (första slaget i varje grupp), ett värde per slag
+static const bool kAccParadiddle[8] = { true, false, false, false, true, false, false, false };   // >R l r r >L r l l
+static const bool kAccDoubleStroke[4] = { true, false, true, false };                              // >R r >L l
+static const bool kAccParaDiddleDiddle[6] = { true, false, false, false, false, false };          // >R l r r l l
+static const bool kAccInvParadiddle[8] = { true, false, false, false, true, false, false, false }; // >R l l r >L r r l
+
 // Är PARADIDDLE-slaget "på" just nu (första halvan av perioden)?
 inline bool paradiddleOn(double phase) { return phase - std::floor(phase) < 0.5; }
 
@@ -422,6 +432,26 @@ inline void panGains(double pos, int law, double& gl, double& gr)
     }
     if (gl < 1e-12) gl = 0.0;
     if (gr < 1e-12) gr = 0.0;
+}
+
+// Är slaget betonat? (TREM: obetonade slag spelas svagare.) Former utan egen
+// betoning räknas som betonade; SIX STROKE och FLAM har redan betoning i nivån.
+inline bool strokeAccented(int shape, double phase)
+{
+    const bool* acc = nullptr;
+    int len = 0;
+    switch (shape) {
+    case kShapeParadiddle:       acc = kAccParadiddle; len = 8; break;
+    case kShapeDoubleStroke:     acc = kAccDoubleStroke; len = 4; break;
+    case kShapeParaDiddleDiddle: acc = kAccParaDiddleDiddle; len = 6; break;
+    case kShapeInvParadiddle:    acc = kAccInvParadiddle; len = 8; break;
+    default: return true;
+    }
+    double p = phase / len;
+    p -= std::floor(p);
+    int step = (int)(p * len);
+    if (step >= len) step = len - 1;
+    return acc[step];
 }
 
 // AUTO-PAN-vågform -> -1..+1 (börjar i mitten och går åt höger).
@@ -1012,6 +1042,7 @@ public:
     {
         sr_ = (sampleRate >= 8000.0 && sampleRate <= 768000.0) ? sampleRate : 44100.0;
         smoothCoef_ = 1.0 - std::exp(-1.0 / (0.005 * sr_));   // 5 ms (pan, bredd, nivå)
+        handCoef_ = 1.0 - std::exp(-2.0 * 3.14159265358979323846 * kHandTiltHz / sr_);
         fadeCoef_ = 1.0 - std::exp(-1.0 / (0.020 * sr_));     // 20 ms (LOW MONO av/på)
         filterHz_ = -1.0;
         leslie_.prepare(sr_);
@@ -1028,6 +1059,8 @@ public:
         leslie_.reset();
         head_.reset();
         airL_.reset(); airR_.reset();
+        handLpL_ = handLpR_ = 0.0;
+        handG_ = handTarget_ = 1.0;
         distSm_ = distance_;
         airSetFor_ = -1.0;
         snap_ = true;
@@ -1139,6 +1172,11 @@ public:
         }
         double pkL = 0.0, pkR = 0.0;
         double pos = pan_;
+        const bool tremStrokes = fxMode_ == kFxTremolo && depth_ > 0.0
+                              && (shape_ == kShapeParadiddle || shape_ >= kShapeDoubleStroke);
+        const double handDark = dbToGain(-kHandTiltDb * depth_), handBright = dbToGain(kHandTiltDb * depth_);
+        const double unaccent = dbToGain(kUnaccentDb * depth_);
+        if (!tremStrokes) handTarget_ = 1.0;
 
         for (int i = 0; i < n; ++i) {
             const double l = inL ? inL[i] : 0.0;
@@ -1159,6 +1197,13 @@ public:
                     // hörs tydligt (DEPTH 50 % sänker 9 dB; rak kurva hade gett 6 dB).
                     const double t = 1.0 - depth_ * (0.5 - 0.5 * tl);
                     ttrem = t * std::sqrt(t);
+                    if (tremStrokes) {
+                        // Händernas karaktär: klangen byts när ett nytt slag börjar
+                        // (mellan slagen behålls den, så bytet hörs inte som ett klick)
+                        if (lfo > 0.0) handTarget_ = handBright;
+                        else if (lfo < 0.0) handTarget_ = handDark;
+                        if (!strokeAccented(shape_, phase_)) ttrem *= unaccent;
+                    }
                 }
             }
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
@@ -1184,6 +1229,7 @@ public:
             if (snap_) {
                 gl_ = tgl; gr_ = tgr; side_ = tside; out_ = outGain_; low_ = tlow;
                 trem_ = ttrem; les_ = tles;
+                handG_ = handTarget_;
                 headPos_ = pos; headMix_ = headOn_ ? 1.0 : 0.0;
                 distGain_ = tdist;
                 snap_ = false;
@@ -1195,6 +1241,7 @@ public:
                 low_ += (tlow - low_) * fadeCoef_;
                 if (std::fabs(low_ - tlow) < 1e-6) low_ = tlow;
                 trem_ += (ttrem - trem_) * smoothCoef_;
+                handG_ += (handTarget_ - handG_) * smoothCoef_;
                 les_ += (tles - les_) * fadeCoef_;
                 headPos_ += (pos - headPos_) * smoothCoef_;
                 const double thead = headOn_ ? 1.0 : 0.0;
@@ -1254,6 +1301,15 @@ public:
             double ol = airL_.process(pl + bass) * g;
             double orr = airR_.process(pr + bass) * g;
 
+            // TREM-rudiment: diskanten mörkare (vänster hand) eller ljusare (höger hand).
+            // Filtret körs alltid, så att av/på inte klickar.
+            handLpL_ += (ol - handLpL_) * handCoef_;
+            handLpR_ += (orr - handLpR_) * handCoef_;
+            if (handG_ != 1.0) {
+                ol = handLpL_ + (ol - handLpL_) * handG_;
+                orr = handLpR_ + (orr - handLpR_) * handG_;
+            }
+
             // MONITOR: lyssna på hela, mono, bara mitten eller bara sidorna
             if (monitor_ == kMonMono || monitor_ == kMonMid) { const double m = (ol + orr) * 0.5; ol = orr = m; }
             else if (monitor_ == kMonSides) { const double s = (ol - orr) * 0.5; ol = orr = s; }
@@ -1297,6 +1353,7 @@ private:
     // utjämnade värden
     double gl_ = 1.0, gr_ = 1.0, side_ = 1.0, out_ = 1.0, low_ = 0.0, trem_ = 1.0, les_ = 0.0;
     bool snap_ = true;
+    double handCoef_ = 0.0, handLpL_ = 0.0, handLpR_ = 0.0, handG_ = 1.0, handTarget_ = 1.0;
 
     // AUTO-PAN
     double tempo_ = 120.0, phase_ = 0.0, beatPos_ = 0.0, loopStart_ = 0.0, loopEnd_ = 0.0;

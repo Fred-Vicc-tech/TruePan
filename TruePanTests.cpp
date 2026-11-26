@@ -339,8 +339,28 @@ int main()
             Engine tr; tr.prepare(kSr);
             run(tr, tq, dc2, dc2, a2, b2);
             bool gate = true;
-            for (int k = 0; k < 8; ++k) gate = gate && a2[k * per + per / 4] > 0.49 && a2[k * per + 3 * per / 4] < 0.01;
-            check(gate, "PARADIDDLE i TREM: varje slag pa, mellan slagen tyst");
+            for (int k = 0; k < 8; ++k) {
+                const double on = a2[k * per + per / 4];
+                const bool acc = k == 0 || k == 4;   // >R l r r >L r l l
+                gate = gate && (acc ? on > 0.49 : (on > 0.30 && on < 0.33)) && a2[k * per + 3 * per / 4] < 0.01;
+            }
+            check(gate, "PARADIDDLE i TREM: betonade slag fulla, obetonade -4 dB, mellan slagen tyst");
+            {
+                // Händernas klang: vänsterslag mörkare, högerslag ljusare (ton 6 kHz)
+                std::vector<float> hs = sine(6000.0, 8 * per), ha, hb;
+                Engine th; th.prepare(kSr);
+                run(th, tq, hs, hs, ha, hb);
+                auto strokeRms = [&](int k) {
+                    double s = 0.0; const int a = k * per + per / 8, len = per / 4;
+                    for (int i = a; i < a + len; ++i) s += (double)ha[i] * ha[i];
+                    return std::sqrt(s / len);
+                };
+                // slag 2 (R, obetonat) och 1 (L, obetonat): skillnad ca 6 dB i diskanten
+                const double diff = db(strokeRms(2) / strokeRms(1));
+                check(diff > 4.5 && diff < 7.0, "PARADIDDLE i TREM: hoger hand ljusare an vanster (ca 6 dB over 1,2 kHz)");
+                // DC (bas) paverkas inte av klangen
+                check(std::fabs(a2[1 * per + per / 4] - a2[2 * per + per / 4]) < 1e-3, "TREM: klangen andrar inte basen");
+            }
             Engine sy; sy.prepare(kSr);
             sy.setParams(q.v);
             sy.setTransport(true, 120.0, true, true, 13.0);   // 13 mod 8 = 5 -> 6:e slaget (R)
