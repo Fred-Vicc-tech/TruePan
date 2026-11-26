@@ -344,12 +344,54 @@ int main()
             Engine sy; sy.prepare(kSr);
             sy.setParams(q.v);
             sy.setTransport(true, 120.0, true, true, 13.0);   // 13 mod 8 = 5 -> 6:e slaget (R)
-            check(std::fabs(sy.cyclePhase() - 5.0) < 1e-9 && lfoValue(kShapeParadiddle, sy.cyclePhase() + 0.1) == 1.0,
+            check(std::fabs(sy.cyclePhase() - 13.0) < 1e-9 && lfoValue(kShapeParadiddle, sy.cyclePhase() + 0.1) == 1.0,
                   "PARADIDDLE foljer Lives takt (8 slag)");
             check(std::fabs(shapeNormFromV16(1.0f) - choiceNorm(kShapeSquare, kNumShapes)) < 1e-6
                   && std::fabs(shapeNormFromV16(0.5f) - choiceNorm(kShapeTriangle, kNumShapes)) < 1e-6
                   && std::fabs(shapeNormFromOld(1.0f, kNumShapesV18) - choiceNorm(kShapeParaVariant, kNumShapes)) < 1e-6,
                   "aldre projekt behaller formen; v1.8:s PARADIDDLE blir PARAVARIANT");
+        }
+
+        // Rudiment: Double Stroke, Paradiddle-diddle, Inverted Paradiddle, Six Stroke Roll, Flam
+        {
+            auto strokes = [](int shape, int count, std::string& out) {
+                out.clear();
+                for (int k = 0; k < count; ++k) {
+                    const double v = lfoValue(shape, k + 0.3), gap = lfoValue(shape, k + 0.75);
+                    if (gap != 0.0) { out += '?'; continue; }
+                    if (v > 0.9) out += 'R'; else if (v > 0.0) out += 'r'; else if (v < -0.9) out += 'L'; else if (v < 0.0) out += 'l'; else out += '-';
+                }
+            };
+            std::string a, b, c, d;
+            strokes(kShapeDoubleStroke, 8, a); strokes(kShapeParaDiddleDiddle, 6, b);
+            strokes(kShapeInvParadiddle, 8, c); strokes(kShapeSixStroke, 6, d);
+            std::printf("      (DOUBLE STROKE %s, PARADIDDLE-DIDDLE %s, INV. PARADIDDLE %s, SIX STROKE %s)\n", a.c_str(), b.c_str(), c.c_str(), d.c_str());
+            check(a == "RRLLRRLL" && b == "RLRRLL" && c == "RLLRLRRL" && d == "RllrrL",
+                  "rudimenten har ratt slag (stora = betonade): RRLL, RLRRLL, RLLR LRRL, >R l l r r >L");
+            // FLAM: förslag på motsatt sida strax före huvudslaget, lR rL
+            const bool flam = lfoValue(kShapeFlam, 0.05) == -kFlamGraceLevel && lfoValue(kShapeFlam, 0.3) == 1.0 && lfoValue(kShapeFlam, 0.75) == 0.0
+                              && lfoValue(kShapeFlam, 1.05) == kFlamGraceLevel && lfoValue(kShapeFlam, 1.3) == -1.0;
+            check(flam, "FLAM: svagt forslag pa motsatt sida (12 % av perioden) fore huvudslaget, lR rL");
+            // I hela motorn: FLAM 1/8 vid 120 bpm -> förslaget ca 30 ms före slaget
+            Params q = p; q.v[kParamShape] = choiceNorm(kShapeFlam, kNumShapes); q.v[kParamRate] = choiceNorm(7, kNumRates);
+            const int n2 = 24000;
+            std::vector<float> dc2(n2, 0.5f), a2, b2;
+            Engine fe; fe.prepare(kSr);
+            run(fe, q, dc2, dc2, a2, b2);
+            // period 12000 sampel: förslag 0-1440 (vänster), slag 1440-6000 (höger)
+            check(a2[1000] > b2[1000] && b2[4000] > 0.6 && a2[4000] < 0.01 && std::fabs(a2[9000] - b2[9000]) < 0.01,
+                  "FLAM i PAN: forslag till vanster (30 ms), slag till hoger, sedan mitten");
+            // TREM: betonade slag fulla, obetonade svagare (SIX STROKE)
+            Params tq = p; tq.v[kParamShape] = choiceNorm(kShapeSixStroke, kNumShapes); tq.v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes);
+            const int per = 24000;
+            std::vector<float> dc3(6 * per, 0.5f), a3, b3;
+            Engine te; te.prepare(kSr);
+            run(te, tq, dc3, dc3, a3, b3);
+            check(a3[per / 4] > 0.49 && a3[per + per / 4] > 0.02 && a3[per + per / 4] < 0.3 && a3[per * 3 / 4] < 0.01,
+                  "SIX STROKE i TREM: betonade slag fulla, obetonade svagare, tyst mellan slagen");
+            check(std::fabs(shapeNormFromOld(1.0f, kNumShapesV19) - choiceNorm(kShapeParaVariant, kNumShapes)) < 1e-6
+                  && std::fabs(shapeNormFromOld(0.75f, kNumShapesV19) - choiceNorm(kShapeParadiddle, kNumShapes)) < 1e-6,
+                  "projekt fran v1.9 behaller PARADIDDLE och PARAVARIANT");
         }
 
         // Vågformerna
@@ -926,7 +968,7 @@ int main()
         float v0[kNumParams];
         factoryPresetValues(0, v0);
         for (int k = 0; k < kNumParams; ++k) presetsOk = presetsOk && v0[k] == defaultParam(k);
-        check(presetsOk && kNumFactoryPresets == 17, "17 fabrikspresets med giltiga varden; 'Center' = standard");
+        check(presetsOk && kNumFactoryPresets == 19, "19 fabrikspresets med giltiga varden; 'Center' = standard");
     }
 
     // ------------------------------------------------------------------

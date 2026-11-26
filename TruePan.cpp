@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1910;           // TruePan 1.9.1
+const VstInt32 kVersion = 2000;           // TruePan 2.0
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 8 (v1.9: PARADIDDLE + PARAVARIANT, 5 former; 7 = v1.8 med 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
+    uint32_t version;       // 9 (v2.0: rudiment, 10 former; 8 = v1.9 med 5 former; 7 = v1.8 med 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 8;
+        p->chunk.version = 9;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -305,8 +305,8 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
             std::memcpy(&v, data + kChunkHeader + i * sizeof(float), sizeof(float));
             if (version == 2 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV11(v);
             if (version == 3 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV12(v);
-            if (version < 8 && (int)i == kParamShape && v >= 0.0f && v <= 1.0f)               // 3 / 4 -> 5 former
-                v = shapeNormFromOld(v, version < 7 ? kNumShapesV16 : kNumShapesV18);
+            if (version < 9 && (int)i == kParamShape && v >= 0.0f && v <= 1.0f)               // 3 / 4 / 5 -> 10 former
+                v = shapeNormFromOld(v, version < 7 ? kNumShapesV16 : (version == 7 ? kNumShapesV18 : kNumShapesV19));
             p->setParam((int)i, v); // ogiltiga värden ignoreras
         }
         return 1;
@@ -670,11 +670,18 @@ void drawBigValue(Graphics& g, const FontFamily& ff, const KnobDef& k, const wch
 // Liten bild av AUTO-PAN-vågformen (två perioder)
 void drawShapeIcon(Graphics& g, int shape, float x, float y, float w, float h, const Color& color)
 {
-    const int n = 161;   // tillräckligt för 8 skarpa slag
+    const int n = 241;   // tillräckligt för 8 skarpa slag och flammens förslag
     PointF pts[n];
     for (int i = 0; i < n; ++i) {
         // två perioder; PARADIDDLE/PARAVARIANT visar hela mönstret (8 slag)
-        const double span = shape == kShapeParadiddle ? 8.0 : (shape == kShapeParaVariant ? 4.0 : 2.0);
+        double span = 2.0;
+        switch (shape) {
+        case kShapeParadiddle: case kShapeInvParadiddle: span = 8.0; break;
+        case kShapeParaVariant: case kShapeDoubleStroke: span = 4.0; break;
+        case kShapeParaDiddleDiddle: case kShapeSixStroke: span = 6.0; break;
+        case kShapeFlam: span = 2.0; break;
+        default: span = 2.0; break;
+        }
         double ph = (double)i / (n - 1) * span;
         if (i == n - 1) ph = span - 1e-6;
         const float v = (float)lfoValue(shape, ph);
@@ -801,7 +808,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.9.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.0", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -867,13 +874,25 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawText(g, mw, ff, 12, FontStyleBold, autoOn ? kOrange : kTextDim, sb.x + 14.0f, sb.y + 5.0f, sb.w - 28.0f, StringAlignmentCenter);
     } else {
         // Vågformsruta: klick = nästa form
+        // Vågformsruta: < ikon NAMN >  (klick på vänster/höger halva = föregående/nästa)
         const RectDef& sb = ed->shapeBox;
         drawBox(g, sb.x, sb.y, sb.w, sb.h);
         const Color& sc = autoOn ? kOrange : kTextDim;
-        drawShapeIcon(g, shape, sb.x + 6.0f, sb.y + 5.0f, 26.0f, 16.0f, sc);
+        drawText(g, L"<", ff, 11, FontStyleBold, kTextDim, sb.x + 1.0f, sb.y + 5.0f, 10.0f, StringAlignmentCenter);
+        drawText(g, L">", ff, 11, FontStyleBold, kTextDim, sb.x + sb.w - 11.0f, sb.y + 5.0f, 10.0f, StringAlignmentCenter);
+        drawShapeIcon(g, shape, sb.x + 11.0f, sb.y + 6.0f, 20.0f, 14.0f, sc);
         wchar_t sw[24];
         wideFromNarrow(kShapeLongNames[shape], sw, 24);
-        drawText(g, sw, ff, 10, FontStyleBold, sc, sb.x + 32.0f, sb.y + 6.0f, sb.w - 34.0f, StringAlignmentCenter);
+        // Långa namn (PARADIDDLE-DIDDLE) krymps så att de får plats
+        const float tx = sb.x + 33.0f, tw = sb.w - 45.0f;
+        float fsz = 10.0f;
+        for (; fsz > 7.5f; fsz -= 0.5f) {
+            Font f(&ff, fsz, FontStyleBold, UnitPixel);
+            RectF box;
+            g.MeasureString(sw, -1, &f, PointF(0.0f, 0.0f), &box);
+            if (box.Width <= tw + 4.0f) break;
+        }
+        drawText(g, sw, ff, fsz, FontStyleBold, sc, tx, sb.y + 6.0f + (10.0f - fsz) * 0.5f, tw, StringAlignmentCenter);
     }
     drawKnob(g, ed->knobs[3], pv[kParamDepth]);
     swprintf(txt, 64, L"%.0f %%", depth * 100.0);
@@ -1293,7 +1312,8 @@ bool handleButtons(Editor* ed, int x, int y)
         return true;
     }
     if (!ed->leslieMode() && ed->shapeBox.hit(x, y)) {
-        stepChoice(ed, kParamShape, kNumShapes, +1, true);
+        const bool next = x >= ed->shapeBox.x + ed->shapeBox.w * 0.5f;
+        stepChoice(ed, kParamShape, kNumShapes, next ? +1 : -1, true);
         return true;
     }
     if (ed->btnHead.hit(x, y)) {

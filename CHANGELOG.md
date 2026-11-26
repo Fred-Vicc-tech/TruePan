@@ -1,5 +1,13 @@
 # Ändringslogg
 
+## v2.0 – Rudiment (2026-11-26)
+- Fem nya rudiment i AUTO-PAN: DOUBLE STROKE (R R L L), PARADIDDLE-DIDDLE (R L R R L L),
+  INV. PARADIDDLE (R L L R L R R L), SIX STROKE ROLL (>R l l r r >L, betonade ändslag) och
+  FLAM (lR rL: svagt förslag på motsatt sida 12 % av perioden före huvudslaget, 30 ms vid 1/8 och 120 bpm).
+- Separata slag som i PARADIDDLE (en RATE-period per slag). I TREM: betonade slag fulla, obetonade svagare.
+- Vågformsrutan: klick på vänster/höger halva bläddrar bakåt/framåt; långa namn krymps så att de får plats.
+- Presets: Double Stroke 1/16 och Flam 1/8. Projekt och presets från tidigare versioner behåller sin form.
+
 ## v1.9.1 – Högre paneler (2026-11-26)
 - De fyra översta panelerna är 30 px högre, med mer luft mellan knappar, rattar och rutor.
   Fönstret är 686 px högt (tidigare 656).
