@@ -373,7 +373,7 @@ int main()
         run(e2, p, dc, dc, ol, orr);
         double mn = 1.0;
         for (int i = 2000; i < n; ++i) mn = std::fmin(mn, ol[i]);
-        check(std::fabs(mn - 0.125) < 0.01, "TREMOLO DEPTH 50 %: tydlig sankning, -12 dB i dalarna");
+        check(std::fabs(mn - 0.5 * std::pow(0.5, 1.5)) < 0.01, "TREMOLO DEPTH 50 %: tydlig sankning, -9 dB i dalarna");
         p.v[kParamShape] = choiceNorm(kShapeSquare, kNumShapes);
         p.v[kParamDepth] = 1.0f;
         Engine e3; e3.prepare(kSr);
@@ -431,7 +431,12 @@ int main()
         const double corr = slr / std::sqrt(sl * sr);
         std::printf("      (korrelation L/R %.2f)\n", corr);
         check(corr < 0.6, "LESLIE: brett i stereo (vanster och hoger tydligt olika)");
-        check(std::fabs(db(rms(ol, n / 2) / rms(m, n / 2))) < 3.0, "LESLIE: ungefar samma niva som utan effekt (+-3 dB)");
+        {
+            const double pw = (rms(ol, n / 2) * rms(ol, n / 2) + rms(orr, n / 2) * rms(orr, n / 2)) / (2.0 * rms(m, n / 2) * rms(m, n / 2));
+            const double lesDb = 10.0 * std::log10(pw);
+            std::printf("      (Leslie-niva %+.1f dB mot torrt)\n", lesDb);
+            check(lesDb > 0.3 && lesDb < 3.0, "LESLIE: nagot over torr niva (upplevs lika starkt som PAN)");
+        }
         // Doppler: periodtiden svajar (mäts på mikrofonen utan rumsreflexer)
         {
             Leslie les; les.prepare(kSr); les.setRoom(0.0); les.setHornHz(8.0);

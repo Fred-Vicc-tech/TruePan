@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1200;           // TruePan 1.2
+const VstInt32 kVersion = 1300;           // TruePan 1.3
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -767,7 +767,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.3", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -915,10 +915,25 @@ void paint(Editor* ed, HDC hdc, int width, int height)
             SolidBrush barB(kCyan), hotB(Color(255, 255, 70, 60));
             g.FillRectangle(&barB, fx0, my[i], w < zero ? w : zero, 9.0f);
             if (w > zero) g.FillRectangle(&hotB, fx0 + zero, my[i], w - zero, 9.0f);
-            Pen zp(kTextDim, 1.0f);
-            g.DrawLine(&zp, fx0 + zero, my[i] - 2.0f, fx0 + zero, my[i] + 11.0f);
+            // Skalstreck i staplarna
+            const int marks[7] = { -36, -24, -18, -12, -6, -3, 0 };
+            for (int k = 0; k < 7; ++k) {
+                const float mx = fx0 + meterFrac((float)dbToGain(marks[k])) * (fx1 - fx0);
+                Pen mp(marks[k] == 0 ? kTextDim : Color(255, 70, 74, 80), 1.0f);
+                g.DrawLine(&mp, mx, my[i] - 2.0f, mx, my[i] + 11.0f);
+            }
         }
-        drawText(g, L"0 dB", ff, 10, FontStyleRegular, kTextDim, fx0 + (48.0f / 54.0f) * (fx1 - fx0) - 20.0f, 436.0f, 40.0f, StringAlignmentCenter);
+        // Skala under mätarna: -36, -24, -18, -12, -6, -3, 0 dB
+        {
+            const int marks[7] = { -36, -24, -18, -12, -6, -3, 0 };
+            for (int k = 0; k < 7; ++k) {
+                const float mx = fx0 + meterFrac((float)dbToGain(marks[k])) * (fx1 - fx0);
+                wchar_t ml[16];
+                if (marks[k] == 0) wcscpy(ml, L"0 dB");
+                else swprintf(ml, 16, L"%d", marks[k]);
+                drawText(g, ml, ff, 10, FontStyleRegular, kTextDim, mx - 20.0f, 436.0f, 40.0f, StringAlignmentCenter);
+            }
+        }
     }
 
     // --- PRESET ---

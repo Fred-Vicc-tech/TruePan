@@ -349,7 +349,10 @@ public:
     double hornAngle() const { return hornAng_; }
 
 private:
-    static constexpr double kNorm = 0.8;
+    // Nivå: Leslien ger brett, okorrelerat ljud som upplevs svagare än samma
+    // effekt i mitten. Därför ligger den ca 1,5 dB över torrt ljud i effekt,
+    // så att den upplevs lika stark som PAN-läget.
+    static constexpr double kNorm = 1.05;
 
     // Rotorn sedd från en mikrofon: avståndet ändras (fördröjning = doppler)
     // och nivån är högst när rotorn pekar mot mikrofonen.
@@ -478,10 +481,10 @@ public:
                 const double lfo = lfoValue(shape_, phase_);
                 if (fxMode_ == kFxPan) pos = clampd(pan_ + depth_ * lfo, -1.0, 1.0);
                 else if (fxMode_ == kFxTremolo) {
-                    // Kvadrerad kurva: djupare och längre dalar, så att tremolot hörs
-                    // tydligt (DEPTH 50 % sänker 12 dB i stället för 6 dB).
+                    // Kurva med exponent 1,5: djupare dalar än rak kurva, så att tremolot
+                    // hörs tydligt (DEPTH 50 % sänker 9 dB; rak kurva hade gett 6 dB).
                     const double t = 1.0 - depth_ * (0.5 - 0.5 * lfo);
-                    ttrem = t * t;
+                    ttrem = t * std::sqrt(t);
                 }
             }
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;

@@ -1,4 +1,4 @@
-# TruePan v1.2 – Psychoacoustic Stereo Panner
+# TruePan v1.3 – Psychoacoustic Stereo Panner
 
 VST2-effekt (64-bit) för Ableton Live 9.6 på Windows 7 och senare.
 Byggd på samma sätt som TrueSub: eget VST2-gränssnitt (ingen JUCE), CMake,
@@ -14,9 +14,9 @@ statisk runtime och `_WIN32_WINNT=0x0601`.
 | **MODE** | **STEREO** (standard): båda kanalerna följer med när du panorerar – stereobilden smalnar av mot sidan, inget försvinner. **BALANCE**: som en vanlig balansratt – den bortre kanalen sänks. För monoljud låter de två lika. |
 | **WIDTH** | 0 % (mono) … 100 % (oförändrat) … 200 % (extra brett). |
 | **LOW MONO** | Off eller 40–300 Hz. Basen under frekvensen blir mono och **stannar i mitten** även när du panorerar (bra med TrueSub). 24 dB/oktav Linkwitz-Riley, platt nivå. |
-| **AUTO-PAN** | Tre lägen: **PAN** (ljudet åker mellan vänster och höger), **TREM** (tydligt tremolo: nivån svajar i takt, DEPTH 50 % = −12 dB i dalarna) och **LESLIE** (roterande högtalare i ett rum: horn och bastrumma snurrar mellan vänster och höger med väggreflexer och dopplereffekt; SPEED-ratt 1/2 … 1/32 = ett varv per notlängd i Lives tempo, med naturlig uppvarvning). DEPTH = hur mycket. För PAN/TREM: RATE (4 takter … 1/32, även trioler) och vågform (klicka på rutan: SINE / TRIANGLE / SQUARE). Följer Lives takt när Live spelar (”SYNC” visas). |
+| **AUTO-PAN** | Tre lägen: **PAN** (ljudet åker mellan vänster och höger), **TREM** (tydligt tremolo: nivån svajar i takt, DEPTH 50 % = −9 dB i dalarna) och **LESLIE** (roterande högtalare i ett rum: horn och bastrumma snurrar mellan vänster och höger med väggreflexer och dopplereffekt; SPEED-ratt 1/2 … 1/32 = ett varv per notlängd i Lives tempo, med naturlig uppvarvning). DEPTH = hur mycket. För PAN/TREM: RATE (4 takter … 1/32, även trioler) och vågform (klicka på rutan: SINE / TRIANGLE / SQUARE). Följer Lives takt när Live spelar (”SYNC” visas). |
 | **OUTPUT** | −24 … +12 dB. ”Over 0 dB” (uppe till höger) lyser rött om ljudet går över 0 dBFS. Väljaren under ratten: **STEREO** (normalt), **MONO**, **MID** (bara mitten) eller **SIDES** (bara sidorna). MONO och MID låter likadant – MID finns som tydligt namn för mid/side-lyssning. Valet sparas i projektet. |
-| **STEREO FIELD** | Visar var ljudet är just nu (ringen = PAN-ratten, punkten = verklig position med AUTO-PAN) och nivåmätare för L och R. |
+| **STEREO FIELD** | Visar var ljudet är just nu (ringen = PAN-ratten, punkten = verklig position med AUTO-PAN) och nivåmätare för L och R med skala −36, −24, −18, −12, −6, −3 och 0 dB. |
 | **PRESET** | 13 fabrikspresets (syns även i Lives presetlista), sedan dina egna. **SAVE** sparar en egen preset (.tpp) i mappen *Dokument\TruePan Presets*, som skapas automatiskt. **LOAD** öppnar en preset. Pilarna bläddrar genom fabrikspresets och dina egna. |
 | **PAN LAW-grafen** | Verkliga kurvor för vänster (cyan), höger (orange) och total ljudstyrka (streckad). |
 

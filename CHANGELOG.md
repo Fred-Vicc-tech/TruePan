@@ -1,5 +1,10 @@
 # Ändringslogg
 
+## v1.3 – Nivåer och mätarskala (2026-11-26)
+- TREMOLO en aning mildare: DEPTH 50 % = −9 dB i dalarna (v1.2: −12 dB).
+- LESLIE ca 2,4 dB starkare (ca +1,5 dB över torrt i effekt), så att den upplevs lika stark som PAN.
+- Nivåmätarna i STEREO FIELD har skalstreck och siffror: −36, −24, −18, −12, −6, −3, 0 dB.
+
 ## v1.2 – SPEED-ratt, bredare Leslie, tydligare tremolo (2026-11-26)
 - LESLIE: SPEED är en ratt i 8 steg (1/2, 1/4, 1/6, 1/8, 1/12, 1/16, 1/24, 1/32) = ett varv per
   notlängd i Lives tempo. Farten ändras fortfarande mjukt som på en riktig Leslie.
