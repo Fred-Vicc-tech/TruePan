@@ -869,8 +869,16 @@ int main()
         std::printf("      (100 m: 8 kHz %.1f dB, ISO %.1f dB)\n", g8_100, -40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0);
         check(std::fabs(g8_100 - (-40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0)) < 1.6, "DISTANCE 100 m: -40 dB och ca -10 dB extra vid 8 kHz");
 
-        // 1 m = oförändrat (standard)
-        check(std::fabs(distanceM(defaultParam(kParamDistance)) - 1.0) < 1e-6, "DISTANCE standard 1 m = oforandrat ljud");
+        // 1 m = oförändrat (standard) = rattens mitt
+        check(std::fabs(distanceM(defaultParam(kParamDistance)) - 1.0) < 1e-6 && std::fabs(defaultParam(kParamDistance) - 0.5f) < 1e-6
+              && std::fabs(distanceM(0.0f) - 0.25) < 1e-9 && std::fabs(distanceM(1.0f) - 100.0) < 1e-9
+              && std::fabs(distanceM(0.25f) - 0.5) < 1e-6 && std::fabs(distanceM(0.75f) - 10.0) < 1e-6,
+              "DISTANCE: 1 m i mitten (klockan 12), 0,5 m vid kvart, 10 m vid tre kvart, 0,25-100 m");
+        bool rt = true;
+        for (double m = 0.25; m <= 100.0; m *= 1.37) rt = rt && std::fabs(distanceM(distanceNorm(m)) / m - 1.0) < 1e-5;
+        check(rt && std::fabs(distanceM(distanceNormFromV17(0.231378f)) - 1.0) < 1e-3
+              && std::fabs(distanceM(distanceNormFromV17(1.0f)) - 100.0) < 1e-3,
+              "DISTANCE: aldre projekt behaller sitt avstand i den nya skalan");
 
         // Närfält med HEAD: nivåskillnad i basen växer nära huvudet
         auto lowIld = [&](double m) {

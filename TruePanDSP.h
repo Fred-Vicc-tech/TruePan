@@ -199,10 +199,26 @@ inline bool headOn(float n) { return n >= 0.5f; }
 inline double headSizeCm(float n) { return kHeadMinCm + clampd(n, 0.0f, 1.0f) * (kHeadMaxCm - kHeadMinCm); }
 inline float headSizeNorm(double cm) { return (float)clampd((cm - kHeadMinCm) / (kHeadMaxCm - kHeadMinCm), 0.0, 1.0); }
 
-// DISTANCE: 0,25 - 100 m (logaritmisk ratt). 1 m = referens (oförändrat ljud).
+// DISTANCE: 0,25 - 100 m. 1 m = referens (oförändrat ljud) = rattens mitt (klockan 12).
+// Vänster halva: 0,25 - 1 m (närmare), höger halva: 1 - 100 m (längre bort), båda logaritmiska.
 const double kDistMin = 0.25, kDistMax = 100.0, kDistRef = 1.0;
-inline double distanceM(float n) { return kDistMin * std::pow(kDistMax / kDistMin, clampd(n, 0.0f, 1.0f)); }
-inline float distanceNorm(double m) { return (float)clampd(std::log(m / kDistMin) / std::log(kDistMax / kDistMin), 0.0, 1.0); }
+inline double distanceM(float n)
+{
+    const double x = clampd(n, 0.0f, 1.0f);
+    if (x < 0.5) return kDistRef * std::pow(kDistMin / kDistRef, (0.5 - x) * 2.0);
+    return kDistRef * std::pow(kDistMax / kDistRef, (x - 0.5) * 2.0);
+}
+inline float distanceNorm(double m)
+{
+    m = clampd(m, kDistMin, kDistMax);
+    if (m < kDistRef) return (float)(0.5 - 0.5 * std::log(m / kDistRef) / std::log(kDistMin / kDistRef));
+    return (float)(0.5 + 0.5 * std::log(m / kDistRef) / std::log(kDistMax / kDistRef));
+}
+// v1.7 - v2.1.1: ratten var en enda log-skala 0,25 - 100 m (1 m = 0,23)
+inline float distanceNormFromV17(float old)
+{
+    return distanceNorm(kDistMin * std::pow(kDistMax / kDistMin, clampd(old, 0.0f, 1.0f)));
+}
 
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
@@ -1270,7 +1286,8 @@ inline void cleanName(const char* in, char* out, size_t max)
 // ---------------------------------------------------------------------------
 // Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
 // ---------------------------------------------------------------------------
-static const char* const kPresetHeader = "TruePan preset 6";
+static const char* const kPresetHeader = "TruePan preset 7";
+static const char* const kPresetHeaderV20 = "TruePan preset 6";   // v2.0 - v2.1.1: gammal DISTANCE-skala
 static const char* const kPresetHeaderV19 = "TruePan preset 5";   // v1.9: 5 vågformer
 static const char* const kPresetHeaderV18 = "TruePan preset 4";   // v1.8: 4 vågformer
 static const char* const kPresetHeaderV14 = "TruePan preset 3";   // v1.4-1.7: 3 vågformer
@@ -1331,7 +1348,9 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
     const bool v14 = text.compare(0, std::strlen(kPresetHeaderV14), kPresetHeaderV14) == 0;
     const bool v18 = text.compare(0, std::strlen(kPresetHeaderV18), kPresetHeaderV18) == 0;
     const bool v19 = text.compare(0, std::strlen(kPresetHeaderV19), kPresetHeaderV19) == 0;
-    if (!v11 && !v12 && !v14 && !v18 && !v19 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool v20 = text.compare(0, std::strlen(kPresetHeaderV20), kPresetHeaderV20) == 0;
+    if (!v11 && !v12 && !v14 && !v18 && !v19 && !v20 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool oldDistance = v14 || v18 || v19 || v20;   // presets med Dist-rad i gammal skala
     const int oldShapeCount = (v11 || v12 || v14) ? kNumShapesV16 : (v18 ? kNumShapesV18 : (v19 ? kNumShapesV19 : 0));
     for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
     if (name) *name = "Untitled";
@@ -1354,6 +1373,7 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
                 if (v11 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV11((float)d);
                 if (v12 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV12((float)d);
                 if (oldShapeCount && i == kParamShape) v[i] = shapeNormFromOld((float)d, oldShapeCount);
+                if (oldDistance && i == kParamDistance) v[i] = distanceNormFromV17((float)d);
             }
         }
     }

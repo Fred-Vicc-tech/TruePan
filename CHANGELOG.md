@@ -1,5 +1,10 @@
 # Ändringslogg
 
+## v2.2 – DISTANCE med 1 m i mitten (2026-11-26)
+- DISTANCE-ratten har 1 m (standard, oförändrat ljud) klockan 12. Vänster halva: 0,25–1 m (närmare,
+  orange båge), höger halva: 1–100 m (längre bort, blå båge). Båda halvorna logaritmiska.
+- Projekt och presets från tidigare versioner behåller sitt avstånd.
+
 ## v2.1.1 – PAN i Ableton-stil (2026-11-26)
 - PAN visas som i Ableton Live: 50L … C … 50R (förut L 100 … R 100), även i Lives parametervisning,
   STEREO FIELD och grafen.

@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2110;           // TruePan 2.1.1
+const VstInt32 kVersion = 2200;           // TruePan 2.2
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 9 (v2.0: rudiment, 10 former; 8 = v1.9 med 5 former; 7 = v1.8 med 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
+    uint32_t version;       // 10 (v2.2: DISTANCE med 1 m i mitten; 9 = v2.0-2.1.1 rudiment, 10 former; 8 = v1.9 med 5 former; 7 = v1.8 med 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -276,7 +276,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 9;
+        p->chunk.version = 10;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -308,6 +308,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
             std::memcpy(&v, data + kChunkHeader + i * sizeof(float), sizeof(float));
             if (version == 2 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV11(v);
             if (version == 3 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV12(v);
+            if (version < 10 && (int)i == kParamDistance && v >= 0.0f && v <= 1.0f) v = distanceNormFromV17(v); // ny skala, 1 m i mitten
             if (version < 9 && (int)i == kParamShape && v >= 0.0f && v <= 1.0f)               // 3 / 4 / 5 -> 10 former
                 v = shapeNormFromOld(v, version < 7 ? kNumShapesV16 : (version == 7 ? kNumShapesV18 : kNumShapesV19));
             p->setParam((int)i, v); // ogiltiga värden ignoreras
@@ -586,7 +587,7 @@ void drawBox(Graphics& g, float x, float y, float w, float h)
 
 // Ratt med kuggkant, samma som i TrueSub. Cyan båge för värdet (0..1);
 // bipolar = bågen växer från toppen (PAN: vänster/höger).
-void drawKnob(Graphics& g, const KnobDef& k, float v, bool dim = false, bool bipolar = false)
+void drawKnob(Graphics& g, const KnobDef& k, float v, bool dim = false, bool bipolar = false, const Color* leftColor = nullptr)
 {
     const float cx = k.cx, cy = k.cy, r = k.r;
     const float start = 135.0f, sweep = 270.0f;
@@ -598,7 +599,8 @@ void drawKnob(Graphics& g, const KnobDef& k, float v, bool dim = false, bool bip
     Pen arc(dim ? Color(255, 70, 90, 98) : kCyan, arcW);
     if (bipolar) {
         const float d = v - 0.5f;
-        if (std::fabs(d) > 0.001f) g.DrawArc(&arc, cx - ar, cy - ar, ar * 2, ar * 2, 270.0f, sweep * d);
+        Pen arcLeft(leftColor && !dim ? *leftColor : (dim ? Color(255, 70, 90, 98) : kCyan), arcW);
+        if (std::fabs(d) > 0.001f) g.DrawArc(d < 0.0f ? &arcLeft : &arc, cx - ar, cy - ar, ar * 2, ar * 2, 270.0f, sweep * d);
     } else if (v > 0.001f) g.DrawArc(&arc, cx - ar, cy - ar, ar * 2, ar * 2, start, sweep * v);
 
     const float kPiF = 3.14159265f;
@@ -662,11 +664,11 @@ void drawKnob(Graphics& g, const KnobDef& k, float v, bool dim = false, bool bip
 }
 
 void drawSmallKnob(Graphics& g, const FontFamily& ff, const KnobDef& k, float v, const wchar_t* label, const wchar_t* value,
-                   bool dim = false, const Color* valueColor = nullptr)
+                   bool dim = false, const Color* valueColor = nullptr, bool bipolar = false, const Color* leftColor = nullptr)
 {
     const Color& tc = dim ? kTextDim : kText;
     drawText(g, label, ff, 12, FontStyleBold, tc, k.cx - 52.0f, k.cy - 46.0f, 104.0f, StringAlignmentCenter);
-    drawKnob(g, k, v, dim);
+    drawKnob(g, k, v, dim, bipolar, leftColor);
     drawText(g, value, ff, 13, valueColor ? FontStyleBold : FontStyleRegular, valueColor && !dim ? *valueColor : tc,
              k.cx - 52.0f, k.cy + 27.0f, 104.0f, StringAlignmentCenter);
 }
@@ -817,7 +819,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.1.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -1013,7 +1015,8 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         if (dm < 10.0) swprintf(txt, 64, L"%.2f m", dm);
         else if (dm < 99.95) swprintf(txt, 64, L"%.1f m", dm);
         else swprintf(txt, 64, L"%.0f m", dm);
-        drawSmallKnob(g, ff, ed->knobs[7], pv[kParamDistance], L"DISTANCE", txt);
+        // 1 m = klockan 12; närmare = orange båge åt vänster, längre bort = blå åt höger
+        drawSmallKnob(g, ff, ed->knobs[7], pv[kParamDistance], L"DISTANCE", txt, false, nullptr, true, &kOrange);
     }
 
     // --- PRESET ---
