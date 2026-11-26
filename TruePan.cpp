@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1600;           // TruePan 1.6
+const VstInt32 kVersion = 1700;           // TruePan 1.7
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 5 (v1.6: HEAD; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
+    uint32_t version;       // 6 (v1.7: DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 5;
+        p->chunk.version = 6;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -387,8 +387,7 @@ VST_EXPORT AEffect* VSTPluginMain(audioMasterCallback host)
     p->rect.top = 0; p->rect.left = 0;
     p->rect.bottom = 656; p->rect.right = 900;
 
-    p->engine.prepare(44100.0);
-    return &e;
+    return &e;   // motorn är redan förberedd för 44,1 kHz (Live skickar rätt frekvens före start)
 }
 
 // ===========================================================================
@@ -456,7 +455,7 @@ struct Editor
     Plugin* plugin = nullptr;
     HWND hwnd = nullptr;
 
-    static const int kNumKnobs = 7;
+    static const int kNumKnobs = 8;
     KnobDef knobs[kNumKnobs] = {
         { kParamPan,     colX(0) + 103.0f, 181.0f, 44.0f },
         { kParamWidth,   colX(1) + 62.0f, kKnobRowY, 36.0f },
@@ -465,6 +464,7 @@ struct Editor
         { kParamRate,    colX(2) + kSideKnobDX, kKnobRowY, 20.0f },
         { kParamOutput,  colX(3) + 103.0f, 181.0f, 44.0f },
         { kParamLesSpeed, colX(2) + kSideKnobDX, kKnobRowY, 20.0f }, // samma plats som RATE (LESLIE)
+        { kParamDistance, 604.0f, 392.0f, 20.0f },                   // DISTANCE i STEREO FIELD
     };
     int dragKnob = -1;
     int dragStartY = 0;
@@ -791,7 +791,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.6", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.7", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -913,7 +913,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawPanel(g, kFieldX, kRow2Y, kFieldW, kRow2H);
     drawText(g, L"STEREO FIELD", ff, 14, FontStyleBold, kTextDim, kFieldX + 16, kRow2Y + 6, 200, StringAlignmentNear);
     {
-        const float fx0 = 70.0f, fx1 = 612.0f, fy = 366.0f;
+        const float fx0 = 70.0f, fx1 = 540.0f, fy = 366.0f;   // DISTANCE-ratten till höger
         auto fieldX = [&](double ps) { return fx0 + (float)((ps + 1.0) * 0.5) * (fx1 - fx0); };
         // AUTO-PAN-område (orange band)
         if (autoOn) {
@@ -934,8 +934,10 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         // PAN-rattens läge (ring) och verklig position (fylld punkt)
         Pen ringPen(kTextDim, 1.5f);
         g.DrawEllipse(&ringPen, fieldX(pan) - 8.0f, fy - 8.0f, 16.0f, 16.0f);
+        // Punkten blir mindre ju längre bort ljudet är
         SolidBrush posB(autoOn ? kOrange : kCyan);
-        g.FillEllipse(&posB, fieldX(pos) - 6.0f, fy - 6.0f, 12.0f, 12.0f);
+        const float pr = 3.5f + 4.5f * (1.0f - pv[kParamDistance]);
+        g.FillEllipse(&posB, fieldX(pos) - pr, fy - pr, pr * 2.0f, pr * 2.0f);
 
         // Nivåmätare L och R
         const float my[2] = { 405.0f, 425.0f };
@@ -969,6 +971,15 @@ void paint(Editor* ed, HDC hdc, int width, int height)
                 drawText(g, ml, ff, 10, FontStyleRegular, kTextDim, mx - 20.0f, 436.0f, 40.0f, StringAlignmentCenter);
             }
         }
+    }
+
+    {
+        // DISTANCE
+        const double dm = distanceM(pv[kParamDistance]);
+        if (dm < 10.0) swprintf(txt, 64, L"%.2f m", dm);
+        else if (dm < 99.95) swprintf(txt, 64, L"%.1f m", dm);
+        else swprintf(txt, 64, L"%.0f m", dm);
+        drawSmallKnob(g, ff, ed->knobs[7], pv[kParamDistance], L"DISTANCE", txt);
     }
 
     // --- PRESET ---

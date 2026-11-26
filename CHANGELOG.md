@@ -1,5 +1,13 @@
 # Ändringslogg
 
+## v1.7 – DISTANCE (2026-11-26)
+- Ny ratt DISTANCE 0,25–100 m i STEREO FIELD (standard 1 m = oförändrat ljud).
+- Avståndslagen 1/r: −6 dB per fördubblat avstånd (+12 dB vid 0,25 m, −40 dB vid 100 m).
+- Luftens dämpning enligt ISO 9613-1 (20 °C, 50 % RH, 101,325 kPa). Filtret anpassas per avstånd och
+  samplingsfrekvens; avvikelse från standardens kurva högst ca 0,5 dB vid 44,1/48 kHz och 1,4 dB vid 96 kHz.
+- Närfält med HEAD: avståndslagen per öra. 200 Hz nivåskillnad rakt från sidan: 6,8 dB på 0,25 m, 1,9 dB på 1 m.
+- Avståndet glider mjukt vid automation (ca 30 ms).
+
 ## v1.6 – HEAD: psykoakustisk huvudmodell (2026-11-26)
 - Ny knapp HEAD (i grafens rubrikrad) med huvudstorlek 12–30 cm (standard 17,5 cm = effektiv huvudradie 8,75 cm).
 - Tidsskillnad mellan öronen enligt Brown & Duda / Woodworth: ITD = (a/c)(az + sin az), ca 0,66 ms rakt från sidan.

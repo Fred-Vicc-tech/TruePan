@@ -44,16 +44,17 @@ enum {
     kParamLesModel,
     kParamHead,
     kParamHeadSize,
+    kParamDistance,
     kNumParams
 };
 
 // Högst 7 tecken (Live 9 visar inte fler).
 static const char* const kParamNames[kNumParams] = {
     "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
-    "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz"
+    "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz", "Dist"
 };
 static const char* const kParamLabels[kNumParams] = {
-    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", "", "", "", "cm"
+    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", "", "", "", "cm", "m"
 };
 
 // --- Val (knappar/väljare) ------------------------------------------------
@@ -158,6 +159,11 @@ inline bool headOn(float n) { return n >= 0.5f; }
 inline double headSizeCm(float n) { return kHeadMinCm + clampd(n, 0.0f, 1.0f) * (kHeadMaxCm - kHeadMinCm); }
 inline float headSizeNorm(double cm) { return (float)clampd((cm - kHeadMinCm) / (kHeadMaxCm - kHeadMinCm), 0.0, 1.0); }
 
+// DISTANCE: 0,25 - 100 m (logaritmisk ratt). 1 m = referens (oförändrat ljud).
+const double kDistMin = 0.25, kDistMax = 100.0, kDistRef = 1.0;
+inline double distanceM(float n) { return kDistMin * std::pow(kDistMax / kDistMin, clampd(n, 0.0f, 1.0f)); }
+inline float distanceNorm(double m) { return (float)clampd(std::log(m / kDistMin) / std::log(kDistMax / kDistMin), 0.0, 1.0); }
+
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
 inline bool lowMonoOn(float n) { return n >= 0.001f; }
@@ -198,6 +204,7 @@ inline float defaultParam(int index)
     case kParamLesModel: return 0.0f;                           // 122
     case kParamHead:    return 0.0f;                            // av (äldre projekt låter som förut)
     case kParamHeadSize: return headSizeNorm(kHeadStdCm);
+    case kParamDistance: return distanceNorm(kDistRef);
     default:            return 0.0f;
     }
 }
@@ -232,6 +239,11 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     case kParamLesModel: std::snprintf(out, max, "%s", kLesModelNames[lesModelFromNorm(n)]); break;
     case kParamHead:    std::snprintf(out, max, "%s", headOn(n) ? "On" : "Off"); break;
     case kParamHeadSize: std::snprintf(out, max, "%.1f", headSizeCm(n)); break;
+    case kParamDistance: {
+        const double m = distanceM(n);
+        std::snprintf(out, max, m < 10.0 ? "%.2f" : (m < 99.95 ? "%.1f" : "%.0f"), m);
+        break;
+    }
     default:            std::snprintf(out, max, "-"); break;
     }
 }
@@ -520,6 +532,162 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// DISTANCE
+//  - Nivå: avståndslagen (sfärisk spridning), 1/r: -6 dB per fördubblat avstånd,
+//    relativt 1 m.
+//  - Luftens dämpning: ISO 9613-1 (atmosfärisk absorption), vid 20 grader C,
+//    50 % relativ fuktighet och normalt lufttryck. Dämpningen i dB är
+//    alpha(f) * (r - 1 m) och växer kraftigt med frekvensen (ca 4,7 dB/km vid
+//    1 kHz, 105 dB/km vid 8 kHz, 365 dB/km vid 16 kHz).
+//    Filtret: 4 bilinjära + 4 enkla förstapolsfilter vars styrka anpassas
+//    (minsta kvadrat i dB) till ISO-kurvan för varje avstånd och samplingsfrekvens.
+//  - Närfält (med HEAD): avståndslagen per öra. Nära huvudet är det närmaste
+//    örat märkbart närmare källan än det bortre, så nivåskillnaden mellan öronen
+//    växer även i basen (under ca 1 m).
+// ---------------------------------------------------------------------------
+inline double isoAirAbsorptionDbPerM(double f, double tempC = 20.0, double rh = 50.0, double pKPa = 101.325)
+{
+    const double pr = 101.325, T0 = 293.15, T01 = 273.16, T = tempC + 273.15;
+    const double psat = pr * std::pow(10.0, -6.8346 * std::pow(T01 / T, 1.261) + 4.6151);
+    const double h = rh * psat / pKPa;                                   // vattenånga, mol-%
+    const double frO = pKPa / pr * (24.0 + 4.04e4 * h * (0.02 + h) / (0.391 + h));
+    const double frN = pKPa / pr * std::pow(T / T0, -0.5) * (9.0 + 280.0 * h * std::exp(-4.170 * (std::pow(T / T0, -1.0 / 3.0) - 1.0)));
+    const double f2 = f * f;
+    return 8.686 * f2 * (1.84e-11 * (pr / pKPa) * std::sqrt(T / T0)
+           + std::pow(T / T0, -2.5) * (0.01275 * std::exp(-2239.1 / T) / (frO + f2 / frO)
+                                       + 0.1068 * std::exp(-3352.0 / T) / (frN + f2 / frN)));
+}
+
+// Filtrets dämpning (dB) vid frekvensen f för styrkorna K1 (bilinjära) och K2 (enkla)
+const int kAirN1 = 4, kAirN2 = 4;
+inline double airFilterDb(double k1, double k2, double f, double sr)
+{
+    const double t = std::tan(kPi * f / sr), sn = std::sin(kPi * f / sr);
+    return 10.0 * kAirN1 * std::log10(1.0 + k1 * t * t) + 10.0 * kAirN2 * std::log10(1.0 + k2 * 4.0 * sn * sn);
+}
+
+// Tabell (per samplingsfrekvens) med filterstyrkor för olika avstånd
+class AirTable
+{
+public:
+    static const int kPoints = 48;
+
+    void build(double sr)
+    {
+        sr_ = sr;
+        // Frekvenser 250 Hz .. 16 kHz (högst 0,45 * fs)
+        nf_ = 0;
+        const double fmax = std::min(16000.0, 0.45 * sr);
+        for (double f = 250.0; f <= fmax && nf_ < kMaxF; f *= 1.08) {
+            const double t = std::tan(kPi * f / sr), sn = std::sin(kPi * f / sr);
+            fT_[nf_] = t * t; fS_[nf_] = 4.0 * sn * sn; fA_[nf_] = isoAirAbsorptionDbPerM(f);
+            ++nf_;
+        }
+        double k1 = -1.0, k2 = -1.0;
+        for (int i = 0; i < kPoints; ++i) {
+            const double x = xAt(i);
+            fit(x, k1, k2);
+            k1_[i] = k1; k2_[i] = k2;
+        }
+    }
+    // x = avstånd - 1 m. Ger filterstyrkorna (0 = inget filter).
+    void lookup(double x, double& k1, double& k2) const
+    {
+        if (x <= 0.0) { k1 = k2 = 0.0; return; }
+        const double x0 = xAt(0);
+        if (x <= x0) { k1 = k1_[0] * x / x0; k2 = k2_[0] * x / x0; return; }
+        const double pos = std::log(x / x0) / std::log(xAt(kPoints - 1) / x0) * (kPoints - 1);
+        int i = (int)pos;
+        if (i >= kPoints - 1) { k1 = k1_[kPoints - 1]; k2 = k2_[kPoints - 1]; return; }
+        const double fr = pos - i;
+        k1 = std::exp(std::log(k1_[i]) * (1.0 - fr) + std::log(k1_[i + 1]) * fr);
+        k2 = std::exp(std::log(k2_[i]) * (1.0 - fr) + std::log(k2_[i + 1]) * fr);
+    }
+    static double xAt(int i) { return 0.25 * std::pow((kDistMax - kDistRef) / 0.25, (double)i / (kPoints - 1)); }
+
+private:
+    static const int kMaxF = 64;
+
+    double err(double x, double k1, double k2) const
+    {
+        double e = 0.0;
+        for (int i = 0; i < nf_; ++i) {
+            const double a = fA_[i] * x;
+            if (a > 30.0) continue;                       // över 30 dB: hörs inte ändå
+            const double m = 10.0 * kAirN1 * std::log10(1.0 + k1 * fT_[i]) + 10.0 * kAirN2 * std::log10(1.0 + k2 * fS_[i]);
+            e += (m - a) * (m - a);
+        }
+        return e;
+    }
+    // Minsta kvadrat i dB (mönstersökning i log-skala), varmstart från förra punkten
+    void fit(double x, double& k1, double& k2) const
+    {
+        if (k1 <= 0.0 || k2 <= 0.0) {
+            double num = 0.0, den = 0.0;
+            for (int i = 0; i < nf_; ++i) {
+                const double b = 4.343 * (kAirN1 * fT_[i] + kAirN2 * fS_[i]);
+                num += fA_[i] * x * b; den += b * b;
+            }
+            k1 = k2 = den > 0.0 ? std::max(num / den, 1e-12) : 1e-12;
+        } else {
+            k1 *= x / prevX_; k2 *= x / prevX_;
+        }
+        double e = err(x, k1, k2), step = 2.0;
+        for (int it = 0; it < 400 && step > 1.0005; ++it) {
+            bool better = false;
+            const double c[4][2] = { { step, 1.0 }, { 1.0 / step, 1.0 }, { 1.0, step }, { 1.0, 1.0 / step } };
+            for (int k = 0; k < 4; ++k) {
+                const double e2 = err(x, k1 * c[k][0], k2 * c[k][1]);
+                if (e2 < e) { e = e2; k1 *= c[k][0]; k2 *= c[k][1]; better = true; }
+            }
+            if (!better) step = std::sqrt(step);
+        }
+        prevX_ = x;
+    }
+
+    double sr_ = 44100.0;
+    double fT_[kMaxF], fS_[kMaxF], fA_[kMaxF];
+    int nf_ = 0;
+    double k1_[kPoints], k2_[kPoints];
+    mutable double prevX_ = 1.0;
+};
+
+// Luftdämpningsfiltret för en kanal
+struct AirFilter
+{
+    struct Bil { double x1 = 0.0, y1 = 0.0; };
+    Bil bil[kAirN1];
+    double leak[kAirN2] = { 0.0, 0.0, 0.0, 0.0 };
+    double b0 = 1.0, a1 = 0.0, c = 1.0;
+    bool active = false;
+
+    void set(double k1, double k2)
+    {
+        active = k1 > 1e-12 || k2 > 1e-12;
+        const double k = std::sqrt(std::max(k1, 0.0));      // bilinjär förstapol: k = 2 fs / wc
+        b0 = 1.0 / (1.0 + k);
+        a1 = (1.0 - k) / (1.0 + k);
+        c = k2 > 1e-12 ? (-1.0 + std::sqrt(1.0 + 4.0 * k2)) / (2.0 * k2) : 1.0;
+    }
+    void reset() { for (int i = 0; i < kAirN1; ++i) bil[i] = Bil(); for (int i = 0; i < kAirN2; ++i) leak[i] = 0.0; }
+    double process(double x)
+    {
+        if (!active) {
+            // följ signalen så att filtret kan slås på utan klick
+            for (int i = 0; i < kAirN1; ++i) { bil[i].x1 = x; bil[i].y1 = x; }
+            for (int i = 0; i < kAirN2; ++i) leak[i] = x;
+            return x;
+        }
+        for (int i = 0; i < kAirN1; ++i) {
+            const double y = b0 * (x + bil[i].x1) - a1 * bil[i].y1;
+            bil[i].x1 = x; bil[i].y1 = y; x = y;
+        }
+        for (int i = 0; i < kAirN2; ++i) { leak[i] += (x - leak[i]) * c; x = leak[i]; }
+        return x;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // HEAD: sfärisk huvudmodell (psykoakustik).
 //  - Tidsskillnad (ITD): Brown & Duda (1998) / Woodworth: per öra
 //      T(theta) = -(a/c) cos(theta)        för 0 <= theta < 90 grader
@@ -600,6 +768,15 @@ public:
         w_ = 0;
     }
     double radius() const { return a_; }
+    void setDistance(double r) { r_ = r > a_ * 1.5 ? r : a_ * 1.5; }
+
+    // Närfält: avståndslagen per öra, relativt läget rakt fram (lika långt till båda)
+    static double nearFieldGain(double az, bool rightEar, double r, double a)
+    {
+        const double s = std::sin(az) * (rightEar ? 1.0 : -1.0);
+        const double d = std::sqrt(r * r + a * a - 2.0 * r * a * s);
+        return std::sqrt(r * r + a * a) / d;
+    }
 
     // pos = -1 (vänster) .. +1 (höger) -> azimut -90 .. +90 grader
     void process(double inL, double inR, double pos, double& outL, double& outR)
@@ -611,8 +788,8 @@ public:
         // Fördröjning per öra, relativt det öra som hör först (rakt fram: 0 och 0)
         const double dL = headEarDelay(thL, a_), dR = headEarDelay(thR, a_);
         const double first = dL < dR ? dL : dR;
-        outL = shade(earL_, read(bufL_, (dL - first) * sr_), headAlpha(thL));
-        outR = shade(earR_, read(bufR_, (dR - first) * sr_), headAlpha(thR));
+        outL = shade(earL_, read(bufL_, (dL - first) * sr_), headAlpha(thL)) * nearFieldGain(az, false, r_, a_);
+        outR = shade(earR_, read(bufR_, (dR - first) * sr_), headAlpha(thR)) * nearFieldGain(az, true, r_, a_);
         w_ = (w_ + 1) & (kBufSize - 1);
     }
 
@@ -646,7 +823,7 @@ private:
         return ((c3 * f + c2) * f + c1) * f + y1;
     }
 
-    double sr_ = 44100.0, a_ = 0.0875, w0_ = 343.0 / 0.0875, alpha0_ = 1.0;
+    double sr_ = 44100.0, a_ = 0.0875, w0_ = 343.0 / 0.0875, alpha0_ = 1.0, r_ = 1.0;
     Section inv_;
     std::vector<double> bufL_, bufR_;
     Ear earL_, earR_;
@@ -669,6 +846,8 @@ public:
         filterHz_ = -1.0;
         leslie_.prepare(sr_);
         head_.prepare(sr_, headRadius_);
+        air_.build(sr_);
+        airSetFor_ = -1.0;
         reset();
     }
 
@@ -678,6 +857,9 @@ public:
         lpM_.reset();
         leslie_.reset();
         head_.reset();
+        airL_.reset(); airR_.reset();
+        distSm_ = distance_;
+        airSetFor_ = -1.0;
         snap_ = true;
         peakL_ = peakR_ = 0.0;
     }
@@ -703,6 +885,7 @@ public:
         headOn_ = headOn(n[kParamHead]);
         headRadius_ = headSizeCm(n[kParamHeadSize]) * 0.005;   // cm -> radie i meter
         if (headRadius_ != head_.radius()) head_.setRadius(headRadius_);
+        distance_ = distanceM(n[kParamDistance]);
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
@@ -730,6 +913,19 @@ public:
             lpM_.set(false, lowHz_, sr_);
             filterHz_ = lowHz_;
         }
+
+        // DISTANCE: avståndet glider mjukt (ca 30 ms, i log-skala); filtret följer per block
+        if (snap_) distSm_ = distance_;
+        else distSm_ = std::exp(std::log(distSm_) + (std::log(distance_) - std::log(distSm_)) * (1.0 - std::exp(-n / (0.03 * sr_))));
+        if (std::fabs(distSm_ / distance_ - 1.0) < 1e-6) distSm_ = distance_;
+        if (distSm_ != airSetFor_) {
+            double k1, k2;
+            air_.lookup(distSm_ - kDistRef, k1, k2);
+            airL_.set(k1, k2); airR_.set(k1, k2);
+            airSetFor_ = distSm_;
+        }
+        head_.setDistance(distSm_);
+        const double tdist = kDistRef / distSm_;      // avståndslagen 1/r
 
         const double phaseInc = tempo_ / 60.0 / sr_ / kRateBeats[rate_];
         {
@@ -779,6 +975,7 @@ public:
                 gl_ = tgl; gr_ = tgr; side_ = tside; out_ = outGain_; low_ = tlow;
                 trem_ = ttrem; les_ = tles;
                 headPos_ = pos; headMix_ = headOn_ ? 1.0 : 0.0;
+                distGain_ = tdist;
                 snap_ = false;
             } else {
                 gl_ += (tgl - gl_) * smoothCoef_;
@@ -792,6 +989,7 @@ public:
                 headPos_ += (pos - headPos_) * smoothCoef_;
                 const double thead = headOn_ ? 1.0 : 0.0;
                 headMix_ += (thead - headMix_) * fadeCoef_;
+                distGain_ += (tdist - distGain_) * smoothCoef_;
                 if (std::fabs(headMix_ - thead) < 1e-6) headMix_ = thead;
                 if (std::fabs(les_ - tles) < 1e-6) les_ = tles;
             }
@@ -840,10 +1038,10 @@ public:
                 }
             }
 
-            // + bas i mitten + TREMOLO + OUTPUT
-            const double g = trem_ * out_;
-            double ol = (pl + bass) * g;
-            double orr = (pr + bass) * g;
+            // + bas i mitten, DISTANCE (luftdämpning och 1/r), TREMOLO, OUTPUT
+            const double g = trem_ * out_ * distGain_;
+            double ol = airL_.process(pl + bass) * g;
+            double orr = airR_.process(pr + bass) * g;
 
             // MONITOR: lyssna på hela, mono, bara mitten eller bara sidorna
             if (monitor_ == kMonMono || monitor_ == kMonMid) { const double m = (ol + orr) * 0.5; ol = orr = m; }
@@ -870,6 +1068,7 @@ public:
     double tempo() const { return tempo_; }
     double sampleRate() const { return sr_; }
     double headRadius() const { return head_.radius(); }
+    double distanceNow() const { return distSm_; }
     double leslieHornHz() const { return leslie_.hornHz(); }
     double leslieDrumHz() const { return leslie_.drumHz(); }
 
@@ -901,6 +1100,11 @@ private:
     // HEAD
     HeadModel head_;
     bool headOn_ = false;
+
+    // DISTANCE
+    AirTable air_;
+    AirFilter airL_, airR_;
+    double distance_ = kDistRef, distSm_ = kDistRef, distGain_ = 1.0, airSetFor_ = -1.0;
     double headRadius_ = kHeadStdCm * 0.005, headPos_ = 0.0, headMix_ = 0.0;
 
     // visning

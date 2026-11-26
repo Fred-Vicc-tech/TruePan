@@ -95,13 +95,13 @@ int main()
     // Parametrar
     char text[64] = {};
     const char* expectedNames[kNumParams] = { "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
-                                              "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz" };
-    bool namesOk = e->numParams == 15;
+                                              "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz", "Dist" };
+    bool namesOk = e->numParams == 16;
     for (int i = 0; i < kNumParams; ++i) {
         e->dispatcher(e, effGetParamName, i, 0, text, 0);
         namesOk = namesOk && std::strcmp(text, expectedNames[i]) == 0;
     }
-    check(namesOk, "15 parametrar med stabila namn och index (de 9 forsta som i v1.0)");
+    check(namesOk, "16 parametrar med stabila namn och index (de 9 forsta som i v1.0)");
     check(e->dispatcher(e, effCanBeAutomated, 0, 0, nullptr, 0) == 1 && e->dispatcher(e, effCanBeAutomated, 99, 0, nullptr, 0) == 0,
           "parametrarna kan automatiseras");
 

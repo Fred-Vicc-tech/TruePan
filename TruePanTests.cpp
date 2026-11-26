@@ -655,7 +655,10 @@ int main()
             Engine el; el.prepare(kSr); run(el, q, lo, lo, a1, b1);
             const double dLo = db(rms(b1, 4000) / rms(a1, 4000));
             std::printf("      (nivaskillnad hoger-vanster: 8 kHz %.1f dB, 200 Hz %.1f dB)\n", dHi, dLo);
-            check(std::fabs(dHi - (near8 - far8)) < 1.0 && dLo < 1.5, "HEAD i utsignalen stammer med modellen (diskant och bas)");
+            // + närfältet vid 1 m (avståndslagen per öra)
+            const double nf = db(HeadModel::nearFieldGain(0.5 * kPi, true, 1.0, a) / HeadModel::nearFieldGain(0.5 * kPi, false, 1.0, a));
+            check(std::fabs(dHi - (near8 - far8 + nf)) < 1.0 && std::fabs(dLo - (near200 - far200 + nf)) < 1.0,
+                  "HEAD i utsignalen stammer med modellen (diskant, bas och narfalt vid 1 m)");
         }
         // Större huvud = större effekt (överdrift)
         {
@@ -691,6 +694,91 @@ int main()
         bool txOk = std::strcmp(tx, "17.5") == 0;
         paramDisplayText(kParamHead, 1.0f, tx, sizeof tx);
         check(txOk && std::strcmp(tx, "On") == 0 && defaultParam(kParamHead) == 0.0f, "texter: HeadSz 17.5 cm, Head On; HEAD av som standard");
+    }
+
+    // ------------------------------------------------------------------
+    // DISTANCE: avståndslagen, luftdämpning (ISO 9613-1), närfält
+    // ------------------------------------------------------------------
+    {
+        // ISO 9613-1 vid 20 grader C, 50 % RH (standardens tabell: 4,66 / 29,7 / 105 dB/km)
+        const double a1k = isoAirAbsorptionDbPerM(1000.0) * 1000.0, a4k = isoAirAbsorptionDbPerM(4000.0) * 1000.0,
+                     a8k = isoAirAbsorptionDbPerM(8000.0) * 1000.0;
+        std::printf("      (ISO 9613-1: 1 kHz %.2f, 4 kHz %.1f, 8 kHz %.1f dB/km)\n", a1k, a4k, a8k);
+        check(std::fabs(a1k - 4.66) < 0.05 && std::fabs(a4k - 29.7) < 0.3 && std::fabs(a8k - 105.0) < 1.0,
+              "luftens dampning enligt ISO 9613-1 stammer med standardens tabell");
+
+        // Filtret följer ISO-kurvan
+        bool fitOk = true;
+        double worst = 0.0;
+        const double rates[3] = { 44100.0, 48000.0, 96000.0 };
+        for (int ri = 0; ri < 3; ++ri) {
+            AirTable tb; tb.build(rates[ri]);
+            const double dists[6] = { 2.0, 5.0, 10.0, 25.0, 50.0, 100.0 };
+            for (int di = 0; di < 6; ++di) {
+                double k1, k2;
+                tb.lookup(dists[di] - 1.0, k1, k2);
+                for (double f = 250.0; f <= 16000.0 && f <= 0.45 * rates[ri]; f *= 1.1) {
+                    const double target = isoAirAbsorptionDbPerM(f) * (dists[di] - 1.0);
+                    if (target > 30.0) continue;
+                    const double e = std::fabs(airFilterDb(k1, k2, f, rates[ri]) - target);
+                    worst = std::fmax(worst, e);
+                }
+            }
+        }
+        fitOk = worst < 1.6;
+        std::printf("      (luftfiltret: storsta avvikelse fran ISO-kurvan %.2f dB, 250 Hz-16 kHz, 2-100 m)\n", worst);
+        check(fitOk, "luftfiltret foljer ISO 9613-1 inom 1,6 dB (44,1 / 48 / 96 kHz, 2-100 m)");
+
+        // Hela motorn vid 10 m: 1/r = -20 dB, plus luftens dämpning i diskanten
+        const int n = 48000;
+        Params p; p.v[kParamDistance] = distanceNorm(10.0);
+        std::vector<float> s1 = sine(1000.0, n, 0.5), s8 = sine(8000.0, n, 0.5), ol, orr;
+        Engine e1; e1.prepare(kSr); run(e1, p, s1, s1, ol, orr);
+        const double g1 = db(rms(ol, 8000) / rms(s1, 8000));
+        Engine e8; e8.prepare(kSr); run(e8, p, s8, s8, ol, orr);
+        const double g8 = db(rms(ol, 8000) / rms(s8, 8000));
+        const double want8 = -20.0 - isoAirAbsorptionDbPerM(8000.0) * 9.0;
+        std::printf("      (10 m: 1 kHz %.2f dB, 8 kHz %.2f dB, ISO %.2f dB)\n", g1, g8, want8);
+        check(std::fabs(g1 + 20.0 - (-isoAirAbsorptionDbPerM(1000.0) * 9.0)) < 0.15 && std::fabs(g8 - want8) < 0.6,
+              "DISTANCE 10 m: -20 dB (1/r) och luftdampning i diskanten enligt ISO");
+        Params p100 = p; p100.v[kParamDistance] = 1.0f;
+        Engine e9; e9.prepare(kSr); run(e9, p100, s8, s8, ol, orr);
+        const double g8_100 = db(rms(ol, 8000) / rms(s8, 8000));
+        std::printf("      (100 m: 8 kHz %.1f dB, ISO %.1f dB)\n", g8_100, -40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0);
+        check(std::fabs(g8_100 - (-40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0)) < 1.6, "DISTANCE 100 m: -40 dB och ca -10 dB extra vid 8 kHz");
+
+        // 1 m = oförändrat (standard)
+        check(std::fabs(distanceM(defaultParam(kParamDistance)) - 1.0) < 1e-6, "DISTANCE standard 1 m = oforandrat ljud");
+
+        // Närfält med HEAD: nivåskillnad i basen växer nära huvudet
+        auto lowIld = [&](double m) {
+            Params q; q.v[kParamHead] = 1.0f; q.v[kParamPan] = 1.0f; q.v[kParamDistance] = distanceNorm(m);
+            std::vector<float> lo = sine(200.0, n), a2, b2;
+            Engine x; x.prepare(kSr); run(x, q, lo, lo, a2, b2);
+            return db(rms(b2, 8000) / rms(a2, 8000));
+        };
+        const double i025 = lowIld(0.25), i1 = lowIld(1.0), i10 = lowIld(10.0);
+        std::printf("      (200 Hz nivaskillnad mellan oronen: 0,25 m %.1f dB, 1 m %.1f dB, 10 m %.1f dB)\n", i025, i1, i10);
+        check(i025 > 5.0 && i1 < 2.5 && i10 < 0.7 && i025 > i1 && i1 > i10, "narfalt: basens nivaskillnad mellan oronen vaxer nara huvudet");
+
+        // Avståndet ändras utan klick
+        {
+            std::vector<float> s3 = sine(300.0, n), cl(n), cr(n);
+            Params near; Params far = near; far.v[kParamDistance] = distanceNorm(20.0);
+            Engine c; c.prepare(kSr);
+            for (int pos = 0; pos < n; pos += 480) {
+                c.setParams(pos < n / 2 ? near.v : far.v);
+                c.process(&s3[pos], &s3[pos], &cl[pos], &cr[pos], 480, false);
+            }
+            double jump = 0.0;
+            for (int i = 1; i < n; ++i) jump = std::fmax(jump, std::fabs(cl[i] - cl[i - 1]));
+            check(jump < 0.5 * 2.0 * kPi * 300.0 / kSr * 1.3, "DISTANCE 1 m -> 20 m: mjuk overgang, inget klick");
+        }
+        char tx[32];
+        paramDisplayText(kParamDistance, defaultParam(kParamDistance), tx, sizeof tx);
+        bool ok = std::strcmp(tx, "1.00") == 0;
+        paramDisplayText(kParamDistance, 1.0f, tx, sizeof tx);
+        check(ok && std::strcmp(tx, "100") == 0, "texter: Dist 1.00 m ... 100 m");
     }
 
     // ------------------------------------------------------------------

@@ -1,4 +1,4 @@
-# TruePan v1.6 – Psychoacoustic Stereo Panner
+# TruePan v1.7 – Psychoacoustic Stereo Panner
 
 VST2-effekt (64-bit) för Ableton Live 9.6 på Windows 7 och senare.
 Byggd på samma sätt som TrueSub: eget VST2-gränssnitt (ingen JUCE), CMake,
@@ -12,6 +12,7 @@ statisk runtime och `_WIN32_WINNT=0x0601`.
 | **PAN** | Flyttar ljudet från helt vänster (L 100) via mitten (C) till helt höger (R 100). Dubbelklick = mitten. |
 | **PAN LAW** | 0 / −3 / −4,5 / −6 dB. Mitten är alltid 0 dB, så pluginet ändrar inte nivån när PAN står i mitten. Standard −3 dB = ett monoljud låter lika starkt var det än står. |
 | **HEAD** | Psykoakustisk huvudmodell (knappen HEAD i grafens rubrikrad). Ersätter PAN LAW med det som händer vid riktiga öron: **tidsskillnad** (Woodworth: upp till ca 0,66 ms rakt från sidan) och **huvudskugga** (Brown & Duda 1998: bortre örat tappar diskant, närmaste örat får mer; basen påverkas nästan inte). Huvudstorlek 12–30 cm (standard 17,5 cm = forskningens effektiva huvud; större = överdriven effekt). PAN i mitten = oförändrat ljud. Grafen visar varje öras nivå vid 4 kHz och 500 Hz samt aktuell tidsskillnad (ITD). |
+| **DISTANCE** | 0,25–100 m (ratten i STEREO FIELD, standard 1 m = oförändrat). **Avståndslagen**: −6 dB per fördubblat avstånd. **Luftens dämpning** enligt ISO 9613-1 (20 °C, 50 % luftfuktighet): diskanten försvinner med avståndet (t.ex. ca −1 dB vid 8 kHz på 10 m, −10 dB på 100 m). Med HEAD även **närfält**: nära huvudet växer nivåskillnaden mellan öronen även i basen. Punkten i STEREO FIELD blir mindre ju längre bort ljudet är. |
 | **MODE** | **STEREO** (standard): båda kanalerna följer med när du panorerar – stereobilden smalnar av mot sidan, inget försvinner. **BALANCE**: som en vanlig balansratt – den bortre kanalen sänks. För monoljud låter de två lika. |
 | **WIDTH** | 0 % (mono) … 100 % (oförändrat) … 200 % (extra brett). |
 | **LOW MONO** | Off eller 40–300 Hz. Basen under frekvensen blir mono och **stannar i mitten** även när du panorerar (bra med TrueSub). 24 dB/oktav Linkwitz-Riley, platt nivå. |
