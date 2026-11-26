@@ -1,5 +1,9 @@
 # Ändringslogg
 
+## v1.9.1 – Högre paneler (2026-11-26)
+- De fyra översta panelerna är 30 px högre, med mer luft mellan knappar, rattar och rutor.
+  Fönstret är 686 px högt (tidigare 656).
+
 ## v1.9 – PARADIDDLE med separata slag, PARAVARIANT (2026-11-26)
 - PARADIDDLE: varje slag är en ren SQUARE-puls på en RATE-period: första halvan ute på sidan, andra halvan
   tillbaka i mitten. R-R och L-L hörs som två separata slag. RATE 1/16 = sextondelsslag; hela mönstret

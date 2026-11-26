@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1900;           // TruePan 1.9
+const VstInt32 kVersion = 1910;           // TruePan 1.9.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -387,7 +387,7 @@ VST_EXPORT AEffect* VSTPluginMain(audioMasterCallback host)
     e.version = kVersion;
 
     p->rect.top = 0; p->rect.left = 0;
-    p->rect.bottom = 656; p->rect.right = 900;
+    p->rect.bottom = 686; p->rect.right = 900;
 
     return &e;   // motorn är redan förberedd för 44,1 kHz (Live skickar rätt frekvens före start)
 }
@@ -432,11 +432,18 @@ const Color kGrid(255, 45, 49, 54);
 // Layout
 const float kPanelW = 206.0f;
 inline float colX(int i) { return 20.0f + i * 218.0f; }  // fyra lika breda kolumner
-const float kRow1Y = 83.0f, kRow1H = 230.0f;
-const float kRow2Y = 323.0f, kRow2H = 130.0f;
-const float kGraphY = 463.0f, kGraphH = 172.0f;
-const float kKnobRowY = 239.0f;
-const float kKnobValueY = 282.0f;
+// Rad 1 är 30 px högre än i v1.9 (mer luft mellan knappar, rattar och rutor);
+// allt under flyttas ner lika mycket (kDy).
+const float kDy = 30.0f;
+const float kRow1Y = 83.0f, kRow1H = 260.0f;
+const float kRow2Y = 323.0f + kDy, kRow2H = 130.0f;
+const float kGraphY = 463.0f + kDy, kGraphH = 172.0f;
+const float kKnobRowY = 256.0f;      // rattar i MODE och AUTO-PAN (+17)
+const float kKnobValueY = 299.0f;
+const float kLabelY = 171.0f;        // WIDTH / DEPTH (+8)
+const float kBigKnobY = 192.0f;      // PAN och OUTPUT (+11)
+const float kBigValueY = 249.0f;     // värdet under PAN och OUTPUT (+16)
+const float kSelY = 296.0f;          // LAW- och MONITOR-väljarna (+30)
 const float kSideKnobDX = 157.0f;
 const float kFieldX = 20.0f, kFieldW = 642.0f;
 
@@ -459,39 +466,39 @@ struct Editor
 
     static const int kNumKnobs = 8;
     KnobDef knobs[kNumKnobs] = {
-        { kParamPan,     colX(0) + 103.0f, 181.0f, 44.0f },
+        { kParamPan,     colX(0) + 103.0f, kBigKnobY, 44.0f },
         { kParamWidth,   colX(1) + 62.0f, kKnobRowY, 36.0f },
         { kParamLowMono, colX(1) + kSideKnobDX, kKnobRowY, 20.0f },
         { kParamDepth,   colX(2) + 62.0f, kKnobRowY, 36.0f },
         { kParamRate,    colX(2) + kSideKnobDX, kKnobRowY, 20.0f },
-        { kParamOutput,  colX(3) + 103.0f, 181.0f, 44.0f },
+        { kParamOutput,  colX(3) + 103.0f, kBigKnobY, 44.0f },
         { kParamLesSpeed, colX(2) + kSideKnobDX, kKnobRowY, 20.0f }, // samma plats som RATE (LESLIE)
-        { kParamDistance, 604.0f, 392.0f, 20.0f },                   // DISTANCE i STEREO FIELD
+        { kParamDistance, 604.0f, 392.0f + kDy, 20.0f },                   // DISTANCE i STEREO FIELD
     };
     int dragKnob = -1;
     int dragStartY = 0;
     float dragStartValue = 0.0f;
 
     // Väljare med pilar: samma storlek som PRESET (ruta mellan pilarna)
-    RectDef lawDown    = { colX(0) + 14.0f,  266.0f, 30.0f, 30.0f };
-    RectDef lawUp      = { colX(0) + 162.0f, 266.0f, 30.0f, 30.0f };
-    RectDef monPrev    = { colX(3) + 14.0f,  266.0f, 30.0f, 30.0f };
-    RectDef monNext    = { colX(3) + 162.0f, 266.0f, 30.0f, 30.0f };
+    RectDef lawDown    = { colX(0) + 14.0f,  kSelY, 30.0f, 30.0f };
+    RectDef lawUp      = { colX(0) + 162.0f, kSelY, 30.0f, 30.0f };
+    RectDef monPrev    = { colX(3) + 14.0f,  kSelY, 30.0f, 30.0f };
+    RectDef monNext    = { colX(3) + 162.0f, kSelY, 30.0f, 30.0f };
     RectDef btnBalance = { colX(1) + 14.0f,  119.0f, 84.0f, 34.0f };
     RectDef btnStereo  = { colX(1) + 106.0f, 119.0f, 84.0f, 34.0f };
     // AUTO-PAN: tre lägen, vågformsruta (klick = nästa form), SLOW/FAST för LESLIE
     RectDef btnFx[kNumFxModes] = { { colX(2) + 14.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 75.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 136.0f, 119.0f, 56.0f, 34.0f } };
-    RectDef shapeBox   = { colX(2) + 80.0f, 160.0f, 112.0f, 26.0f };   // LESLIE: modellväljaren (vänster halva = föregående)
-    RectDef presetPrev = { colX(3) + 14.0f,  357.0f, 30.0f, 30.0f };
-    RectDef presetNext = { colX(3) + 162.0f, 357.0f, 30.0f, 30.0f };
-    RectDef btnSave    = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
+    RectDef shapeBox   = { colX(2) + 80.0f, kLabelY - 3.0f, 112.0f, 26.0f };   // LESLIE: modellväljaren (vänster halva = föregående)
+    RectDef presetPrev = { colX(3) + 14.0f,  357.0f + kDy, 30.0f, 30.0f };
+    RectDef presetNext = { colX(3) + 162.0f, 357.0f + kDy, 30.0f, 30.0f };
+    RectDef btnSave    = { colX(3) + 14.0f,  401.0f + kDy, 84.0f, 34.0f };
     // HEAD i grafens rubrikrad: knapp och huvudstorlek < 17.5 cm >
-    RectDef btnHead    = { 190.0f, 468.0f, 64.0f, 26.0f };
-    RectDef headDown   = { 262.0f, 468.0f, 26.0f, 26.0f };
-    RectDef headUp     = { 396.0f, 468.0f, 26.0f, 26.0f };
-    RectDef btnLoad    = { colX(3) + 106.0f, 401.0f, 84.0f, 34.0f };
+    RectDef btnHead    = { 190.0f, 468.0f + kDy, 64.0f, 26.0f };
+    RectDef headDown   = { 262.0f, 468.0f + kDy, 26.0f, 26.0f };
+    RectDef headUp     = { 396.0f, 468.0f + kDy, 26.0f, 26.0f };
+    RectDef btnLoad    = { colX(3) + 106.0f, 401.0f + kDy, 84.0f, 34.0f };
 
     float meterL = 0.0f, meterR = 0.0f;   // nivåmätare med mjukt fall
     DWORD overUntil = 0;
@@ -685,7 +692,7 @@ void wideFromNarrow(const char* in, wchar_t* out, int max)
 }
 
 // Grafens koordinater (PAN LAW)
-const float kPlotX0 = 86.0f, kPlotX1 = 850.0f, kPlotY0 = 503.0f, kPlotY1 = 591.0f;
+const float kPlotX0 = 86.0f, kPlotX1 = 850.0f, kPlotY0 = 503.0f + kDy, kPlotY1 = 591.0f + kDy;
 static float kPlotDbMax = 6.0f;           // +12 dB i HEAD-läget (närmaste örat får mer diskant)
 const float kPlotDbMin = -24.0f;
 
@@ -794,7 +801,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.9", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.9.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -809,7 +816,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawKnob(g, ed->knobs[0], pv[kParamPan], false, true);
     panText(pan, nb, sizeof nb, true);
     wideFromNarrow(nb, txt, 64);
-    drawText(g, txt, ff, 22, FontStyleBold, kCyan, ed->knobs[0].cx - 70.0f, 233, 140.0f, StringAlignmentCenter);
+    drawText(g, txt, ff, 22, FontStyleBold, kCyan, ed->knobs[0].cx - 70.0f, kBigValueY, 140.0f, StringAlignmentCenter);
     drawButton(g, ff, ed->lawDown, L"<", false, kCyan);
     drawButton(g, ff, ed->lawUp, L">", false, kCyan);
     {
@@ -828,7 +835,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawText(g, L"MODE", ff, 16, FontStyleBold, kText, x0 + 16, kRow1Y + 10, 180, StringAlignmentNear);
     drawButton(g, ff, ed->btnBalance, L"BALANCE", mode == kModeBalance, kOrange);
     drawButton(g, ff, ed->btnStereo, L"STEREO", mode == kModeStereo, kCyan);
-    drawText(g, L"WIDTH", ff, 16, FontStyleBold, kText, x0 + 16, 163, 180, StringAlignmentNear);
+    drawText(g, L"WIDTH", ff, 16, FontStyleBold, kText, x0 + 16, kLabelY, 180, StringAlignmentNear);
     drawKnob(g, ed->knobs[1], pv[kParamWidth]);
     swprintf(txt, 64, L"%.0f %%", widthFromNorm(pv[kParamWidth]) * 100.0);
     drawBigValue(g, ff, ed->knobs[1], txt, kText);
@@ -848,7 +855,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         for (int i = 0; i < kNumFxModes; ++i)
             drawButton(g, ff, ed->btnFx[i], fxLabels[i], fxMode == i, i == kFxPan ? kCyan : kOrange, 13.0f);
     }
-    drawText(g, L"DEPTH", ff, 16, FontStyleBold, kText, x0 + 16, 163, 100, StringAlignmentNear);
+    drawText(g, L"DEPTH", ff, 16, FontStyleBold, kText, x0 + 16, kLabelY, 100, StringAlignmentNear);
     if (fxMode == kFxLeslie) {
         // Modellväljare: < MOD 122 >  (klick på vänster/höger halva)
         const RectDef& sb = ed->shapeBox;
@@ -882,7 +889,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         wideFromNarrow(kRateNames[rateFromNorm(pv[kParamRate])], rw, 24);
         drawSmallKnob(g, ff, ed->knobs[4], pv[kParamRate], L"RATE", rw, !autoOn);
         if (autoOn && p->synced.load())
-            drawText(g, L"SYNC", ff, 10, FontStyleBold, kCyan, ed->knobs[4].cx - 52.0f, 283.0f, 104.0f, StringAlignmentCenter);
+            drawText(g, L"SYNC", ff, 10, FontStyleBold, kCyan, ed->knobs[4].cx - 52.0f, ed->knobs[4].cy + 44.0f, 104.0f, StringAlignmentCenter);
     }
 
     // --- OUTPUT ---
@@ -891,7 +898,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawText(g, L"OUTPUT", ff, 16, FontStyleBold, kText, x0 + 16, kRow1Y + 10, 180, StringAlignmentNear);
     drawKnob(g, ed->knobs[5], pv[kParamOutput]);
     swprintf(txt, 64, L"%.1f dB", outputNormToDb(pv[kParamOutput]));
-    drawText(g, txt, ff, 22, FontStyleBold, kText, ed->knobs[5].cx - 70.0f, 233, 140.0f, StringAlignmentCenter);
+    drawText(g, txt, ff, 22, FontStyleBold, kText, ed->knobs[5].cx - 70.0f, kBigValueY, 140.0f, StringAlignmentCenter);
     {
         // Over 0 dB uppe till höger i rubrikraden
         const bool over = now < ed->overUntil;
@@ -916,7 +923,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawPanel(g, kFieldX, kRow2Y, kFieldW, kRow2H);
     drawText(g, L"STEREO FIELD", ff, 14, FontStyleBold, kTextDim, kFieldX + 16, kRow2Y + 6, 200, StringAlignmentNear);
     {
-        const float fx0 = 70.0f, fx1 = 540.0f, fy = 366.0f;   // DISTANCE-ratten till höger
+        const float fx0 = 70.0f, fx1 = 540.0f, fy = 366.0f + kDy;   // DISTANCE-ratten till höger
         auto fieldX = [&](double ps) { return fx0 + (float)((ps + 1.0) * 0.5) * (fx1 - fx0); };
         // AUTO-PAN-område (orange band)
         if (autoOn) {
@@ -943,7 +950,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.FillEllipse(&posB, fieldX(pos) - pr, fy - pr, pr * 2.0f, pr * 2.0f);
 
         // Nivåmätare L och R
-        const float my[2] = { 405.0f, 425.0f };
+        const float my[2] = { 405.0f + kDy, 425.0f + kDy };
         const float lv[2] = { ed->meterL, ed->meterR };
         const wchar_t* mn[2] = { L"L", L"R" };
         for (int i = 0; i < 2; ++i) {
@@ -971,7 +978,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
                 wchar_t ml[16];
                 if (marks[k] == 0) wcscpy(ml, L"0 dB");
                 else swprintf(ml, 16, L"%d", marks[k]);
-                drawText(g, ml, ff, 10, FontStyleRegular, kTextDim, mx - 20.0f, 436.0f, 40.0f, StringAlignmentCenter);
+                drawText(g, ml, ff, 10, FontStyleRegular, kTextDim, mx - 20.0f, 436.0f + kDy, 40.0f, StringAlignmentCenter);
             }
         }
     }
