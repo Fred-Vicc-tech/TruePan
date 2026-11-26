@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v1.8 – PARADIDDLE (2026-11-26)
+- Ny form i AUTO-PAN: PARADIDDLE (R-L-R-R-L-R-L-L) med egen symbol. Varje slag är lika långt som ett
+  steg i SQUARE (en halv RATE-period); hela mönstret tar 4 RATE-perioder och följer Lives takt
+  (vid RATE 1/4: åttondelsslag, mönstret börjar om varje takt). Fungerar även i TREM.
+- Ny preset: Paradiddle 1/8.
+- Projekt och presets från tidigare versioner behåller sin form (3 -> 4 former räknas om).
+
 ## v1.7 – DISTANCE (2026-11-26)
 - Ny ratt DISTANCE 0,25–100 m i STEREO FIELD (standard 1 m = oförändrat ljud).
 - Avståndslagen 1/r: −6 dB per fördubblat avstånd (+12 dB vid 0,25 m, −40 dB vid 100 m).

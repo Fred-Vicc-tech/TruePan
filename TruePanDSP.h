@@ -60,7 +60,8 @@ static const char* const kParamLabels[kNumParams] = {
 // --- Val (knappar/väljare) ------------------------------------------------
 enum { kModeBalance = 0, kModeStereo = 1 };
 enum { kLaw0 = 0, kLaw3, kLaw45, kLaw6, kNumLaws };
-enum { kShapeSine = 0, kShapeTriangle, kShapeSquare, kNumShapes };
+enum { kShapeSine = 0, kShapeTriangle, kShapeSquare, kShapeParadiddle, kNumShapes };
+const int kNumShapesV16 = 3;   // t.o.m. v1.7: SINE, TRIANGLE, SQUARE
 const int kNumRates = 12;
 enum { kMonStereo = 0, kMonMono, kMonMid, kMonSides, kNumMonitors };
 enum { kFxPan = 0, kFxTremolo, kFxLeslie, kNumFxModes };
@@ -110,8 +111,20 @@ inline float lesSpeedNormFromV12(float old)
 }
 
 static const char* const kLawNames[kNumLaws] = { "0.0", "-3.0", "-4.5", "-6.0" };
-static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square" };
-static const char* const kShapeLongNames[kNumShapes] = { "SINE", "TRIANGLE", "SQUARE" };
+static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square", "Paradid" };
+static const char* const kShapeLongNames[kNumShapes] = { "SINE", "TRIANGLE", "SQUARE", "PARADIDDLE" };
+// PARADIDDLE: R L R R L R L L. Varje slag är lika långt som ett steg i SQUARE
+// (en halv RATE-period), så hela mönstret tar 4 RATE-perioder.
+static const double kParadiddle[8] = { 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0 };
+const double kLfoCycle = 4.0;   // AUTO-PAN-fasen räknas över 4 perioder (för PARADIDDLE)
+
+// Äldre projekt/presets hade 3 former: räkna om rattläget
+inline float shapeNormFromV16(float old)
+{
+    int i = (int)std::floor(old * (kNumShapesV16 - 1) + 0.5f);
+    i = i < 0 ? 0 : (i >= kNumShapesV16 ? kNumShapesV16 - 1 : i);
+    return (float)i / (float)(kNumShapes - 1);
+}
 static const char* const kMonitorNames[kNumMonitors] = { "Stereo", "Mono", "Mid", "Sides" };
 static const char* const kMonitorLongNames[kNumMonitors] = { "STEREO", "MONO", "MID", "SIDES" };
 static const char* const kFxNames[kNumFxModes] = { "Pan", "Trem", "Leslie" };
@@ -287,9 +300,17 @@ inline void panGains(double pos, int law, double& gl, double& gr)
     if (gr < 1e-12) gr = 0.0;
 }
 
-// AUTO-PAN-vågform, fas 0..1 -> -1..+1 (börjar i mitten och går åt höger)
+// AUTO-PAN-vågform -> -1..+1 (börjar i mitten och går åt höger).
+// phase räknas i perioder; PARADIDDLE använder 4 perioder (0..4).
 inline double lfoValue(int shape, double phase)
 {
+    if (shape == kShapeParadiddle) {
+        double p = phase / kLfoCycle;
+        p -= std::floor(p);
+        int step = (int)(p * 8.0);
+        if (step > 7) step = 7;
+        return kParadiddle[step];
+    }
     phase -= std::floor(phase);
     switch (shape) {
     case kShapeTriangle:
@@ -894,7 +915,7 @@ public:
         if (tempoValid && tempo >= 20.0 && tempo <= 999.0) tempo_ = tempo;
         if (playing && ppqValid && std::isfinite(ppq)) {
             const double ph = ppq / kRateBeats[rate_];
-            phase_ = ph - std::floor(ph);
+            phase_ = ph - kLfoCycle * std::floor(ph / kLfoCycle);   // följer takten (4 perioder)
             synced_ = true;
         } else {
             synced_ = false;
@@ -962,7 +983,7 @@ public:
             }
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
             phase_ += phaseInc;
-            if (phase_ >= 1.0) phase_ -= std::floor(phase_);
+            if (phase_ >= kLfoCycle) phase_ -= kLfoCycle * std::floor(phase_ / kLfoCycle);
 
             // Målvärden
             double tgl, tgr;
@@ -1064,7 +1085,8 @@ public:
     double peakL() const { return peakL_; }
     double peakR() const { return peakR_; }
     bool synced() const { return synced_; }
-    double phase() const { return phase_; }
+    double phase() const { return phase_ - std::floor(phase_); }   // inom perioden
+    double cyclePhase() const { return phase_; }                  // 0..4 perioder
     double tempo() const { return tempo_; }
     double sampleRate() const { return sr_; }
     double headRadius() const { return head_.radius(); }
@@ -1114,14 +1136,14 @@ private:
 // ---------------------------------------------------------------------------
 // Fabrikspresets (syns som program i Lives presetlista och i fönstret)
 // ---------------------------------------------------------------------------
-const int kNumFactoryPresets = 15;
+const int kNumFactoryPresets = 16;
 
 inline const char* factoryPresetName(int i)
 {
     static const char* const names[kNumFactoryPresets] = {
         "Center", "Hard Left", "Hard Right", "Wide Stereo", "Mono",
         "Auto-Pan 1/4", "Auto-Pan 1/8 Tri", "Ping-Pong 1/16", "Slow Sweep 2 Bars", "Bass Mono 120",
-        "Tremolo 1/8", "Leslie 122 Chorale", "Leslie 122 Tremolo", "Leslie 145 Tremolo", "Vibratone Fast"
+        "Tremolo 1/8", "Leslie 122 Chorale", "Leslie 122 Tremolo", "Leslie 145 Tremolo", "Vibratone Fast", "Paradiddle 1/8"
     };
     return (i >= 0 && i < kNumFactoryPresets) ? names[i] : "";
 }
@@ -1138,6 +1160,7 @@ inline void factoryPresetValues(int i, float* v)
     case 6: v[kParamDepth] = 0.8f; v[kParamRate] = choiceNorm(7, kNumRates); v[kParamShape] = choiceNorm(kShapeTriangle, kNumShapes); break;
     case 7: v[kParamDepth] = 1.0f; v[kParamRate] = choiceNorm(9, kNumRates); v[kParamShape] = choiceNorm(kShapeSquare, kNumShapes);
             v[kParamMode] = 0.0f; break;
+    case 15: v[kParamDepth] = 1.0f; v[kParamRate] = choiceNorm(7, kNumRates); v[kParamShape] = choiceNorm(kShapeParadiddle, kNumShapes); break;
     case 8: v[kParamDepth] = 0.7f; v[kParamRate] = choiceNorm(1, kNumRates); break;
     case 9: v[kParamLowMono] = lowMonoNorm(120.0); v[kParamWidth] = widthNorm(1.2); break;
     case 10: v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); v[kParamDepth] = 0.85f; v[kParamRate] = choiceNorm(7, kNumRates); break;
@@ -1166,7 +1189,8 @@ inline void cleanName(const char* in, char* out, size_t max)
 // ---------------------------------------------------------------------------
 // Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
 // ---------------------------------------------------------------------------
-static const char* const kPresetHeader = "TruePan preset 3";
+static const char* const kPresetHeader = "TruePan preset 4";
+static const char* const kPresetHeaderV14 = "TruePan preset 3";   // v1.4-1.7: 3 vågformer
 static const char* const kPresetHeaderV11 = "TruePan preset 1";   // v1.1: LesSpd var SLOW/FAST
 static const char* const kPresetHeaderV12 = "TruePan preset 2";   // v1.2-1.3: LesSpd hade 8 tempolägen
 
@@ -1221,7 +1245,9 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
 {
     const bool v11 = text.compare(0, std::strlen(kPresetHeaderV11), kPresetHeaderV11) == 0;
     const bool v12 = text.compare(0, std::strlen(kPresetHeaderV12), kPresetHeaderV12) == 0;
-    if (!v11 && !v12 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool v14 = text.compare(0, std::strlen(kPresetHeaderV14), kPresetHeaderV14) == 0;
+    if (!v11 && !v12 && !v14 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool oldShapes = v11 || v12 || v14;
     for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
     if (name) *name = "Untitled";
     size_t pos = 0;
@@ -1242,6 +1268,7 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
                 v[i] = (float)d;
                 if (v11 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV11((float)d);
                 if (v12 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV12((float)d);
+                if (oldShapes && i == kParamShape) v[i] = shapeNormFromV16((float)d);
             }
         }
     }

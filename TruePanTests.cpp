@@ -298,6 +298,33 @@ int main()
         for (int i = 1; i < n; ++i) jump = std::fmax(jump, std::fabs(orr[i] - orr[i - 1]));
         check(jump < 0.01, "AUTO-PAN SQUARE: mjuka hopp (inga klick)");
 
+        // PARADIDDLE: R L R R L R L L, varje slag en halv period (1/4 vid 120 bpm: 12000 sampel)
+        {
+            bool patOk = true;
+            const double want[8] = { 1, -1, 1, 1, -1, 1, -1, -1 };
+            for (int k = 0; k < 8; ++k) patOk = patOk && lfoValue(kShapeParadiddle, k * 0.5 + 0.25) == want[k];
+            check(patOk && lfoValue(kShapeParadiddle, 4.25) == 1.0, "PARADIDDLE-monstret R L R R L R L L, upprepas efter 4 perioder");
+            Params q = p; q.v[kParamShape] = choiceNorm(kShapeParadiddle, kNumShapes);
+            const int n2 = 8 * 12000;
+            std::vector<float> dc2(n2, 0.5f), a2, b2;
+            Engine pd; pd.prepare(kSr);
+            run(pd, q, dc2, dc2, a2, b2);
+            bool lr = true;
+            for (int k = 0; k < 8; ++k) {
+                const int i = k * 12000 + 6000;
+                lr = lr && (want[k] > 0 ? (b2[i] > 0.6 && a2[i] < 0.01) : (a2[i] > 0.6 && b2[i] < 0.01));
+            }
+            check(lr, "PARADIDDLE i PAN: hoger-vanster-hoger-hoger-vanster-hoger-vanster-vanster");
+            Engine sy; sy.prepare(kSr);
+            sy.setParams(q.v);
+            sy.setTransport(true, 120.0, true, true, 6.0);   // takt 2, slag 3 -> fas 6 mod 4 = 2 -> 5:e slaget (L)
+            check(std::fabs(sy.cyclePhase() - 2.0) < 1e-9 && lfoValue(kShapeParadiddle, sy.cyclePhase() + 0.1) == -1.0,
+                  "PARADIDDLE foljer Lives takt (monstret borjar om varje takt vid 1/4)");
+            check(std::fabs(shapeNormFromV16(1.0f) - choiceNorm(kShapeSquare, kNumShapes)) < 1e-6
+                  && std::fabs(shapeNormFromV16(0.5f) - choiceNorm(kShapeTriangle, kNumShapes)) < 1e-6,
+                  "aldre projekt: SQUARE och TRIANGLE behalls (3 -> 4 former)");
+        }
+
         // Vågformerna
         check(std::fabs(lfoValue(kShapeSine, 0.25) - 1.0) < 1e-12 && std::fabs(lfoValue(kShapeTriangle, 0.75) + 1.0) < 1e-12
               && lfoValue(kShapeSquare, 0.1) == 1.0 && lfoValue(kShapeSquare, 0.6) == -1.0, "AUTO-PAN-vagformer SINE/TRIANGLE/SQUARE");
@@ -803,6 +830,8 @@ int main()
             check(okOld && lesSpeedFromNorm(w[kParamLesSpeed]) == kLesTremolo, "preset fran v1.1 (FAST) laddas som TREMOLO");
             const bool okV12 = presetFromText("TruePan preset 2\r\nName=V12\r\nLesSpd=0.714286\r\n", w, &name);
             check(okV12 && lesSpeedFromNorm(w[kParamLesSpeed]) == kLesSyncFirst + 5, "preset fran v1.2-1.3 (1/16) laddas som 1/16");
+            const bool okV14 = presetFromText("TruePan preset 3\r\nName=Sq\r\nAPShape=1.000000\r\n", w, &name);
+            check(okV14 && shapeFromNorm(w[kParamShape]) == kShapeSquare, "preset fran v1.4-1.7 med SQUARE laddas som SQUARE");
         }
         check(cleanPresetName("A=B\x01\xC3\xA5") == "AB__" && cleanPresetName("") == "Untitled", "presetnamn rensas fran konstiga tecken");
         const std::string u = uniquePresetName("Wide", [](const std::string& s) { return s == "Wide" || s == "Wide 2"; });
@@ -868,7 +897,7 @@ int main()
         float v0[kNumParams];
         factoryPresetValues(0, v0);
         for (int k = 0; k < kNumParams; ++k) presetsOk = presetsOk && v0[k] == defaultParam(k);
-        check(presetsOk && kNumFactoryPresets == 15, "15 fabrikspresets med giltiga varden; 'Center' = standard");
+        check(presetsOk && kNumFactoryPresets == 16, "16 fabrikspresets med giltiga varden; 'Center' = standard");
     }
 
     // ------------------------------------------------------------------
