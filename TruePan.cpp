@@ -42,7 +42,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2400;           // TruePan 2.4
+const VstInt32 kVersion = 2410;           // TruePan 2.4.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -793,7 +793,7 @@ float manualMaxScroll(const Editor* ed) { return std::max(0.0f, ed->contentH - (
 void manualFont(int kind, float& size, int& style, Color& color)
 {
     if (kind == kManHead) { size = 14.0f; style = FontStyleBold; color = kCyan; }
-    else if (kind == kManNote) { size = 12.0f; style = FontStyleItalic; color = kTextDim; }
+    else if (kind == kManNote) { size = 12.0f; style = FontStyleItalic; color = kText; }
     else { size = 13.0f; style = FontStyleRegular; color = kText; }
 }
 
@@ -824,10 +824,10 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.4", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
-    drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kTextDim,
+    drawText(g, L"TruePan v2.4.1", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
-    drawText(g, L"Fredrik Frigren  |  2F Productions 2026  |  info@2f.se", ff, 15, FontStyleBold, kCyan,
+    drawText(g, L"Fredrik Frigren  |  2F Productions \u00A9 2026  |  info@2f.se", ff, 15, FontStyleBold, kCyan,
              38.0f, 145.0f, 600.0f, StringAlignmentNear);
     drawButton(g, ff, ed->btnBack, L"BACK", false, kCyan);
 
@@ -909,15 +909,10 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
         RectF panBox;
         g.MeasureString(L"Pan", -1, &logoFont, PointF(0.0f, 0.0f), typo, &panBox);
-        // Liten i-symbol: loggan går att klicka på (manualen på baksidan)
-        const float ix = 21.0f + trueBox.Width + panBox.Width + 10.0f, iy = 14.0f;
-        Pen ip(ed->showBack ? kCyan : kTextDim, 1.4f);
-        g.DrawEllipse(&ip, ix, iy, 15.0f, 15.0f);
-        drawText(g, L"i", ff, 11, FontStyleBold, ed->showBack ? kCyan : kTextDim, ix, iy + 0.5f, 15.0f, StringAlignmentCenter);
-        ed->logoRight = ix + 18.0f;
+        ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
-    drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.4", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
+    drawText(g, L"TruePan  v2.4.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 

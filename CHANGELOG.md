@@ -1,5 +1,10 @@
 # Ändringslogg
 
+## v2.4.1 – Baksidan finjusterad (2026-11-26)
+- Ingen i-symbol: man klickar direkt på loggan.
+- "Psychoacoustic Stereo Panner" (fram- och baksida) och manualens kursiva källtexter i samma ljusa ton som versionsnumret.
+- Copyright-tecken: "2F Productions © 2026".
+
 ## v2.4 – Baksidan med manual (2026-11-26)
 - Klick på TruePan-loggan (eller den lilla i-symbolen) vänder pluginet till baksidan; klick igen eller BACK
   vänder tillbaka. Muspekaren blir en hand över loggan.
