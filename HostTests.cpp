@@ -109,7 +109,7 @@ int main()
     check(std::strcmp(text, "C") == 0, "PAN standard visar C");
     e->setParameter(e, kParamPan, 0.25f);
     e->dispatcher(e, effGetParamDisplay, kParamPan, 0, text, 0);
-    check(std::strcmp(text, "L50") == 0, "PAN 0,25 visar L50");
+    check(std::strcmp(text, "25L") == 0, "PAN 0,25 visar 25L (Ableton-stil)");
     e->setParameter(e, kParamPan, NAN);
     check(e->getParameter(e, kParamPan) == 0.25f, "NaN fran varden ignoreras");
     e->setParameter(e, kParamPan, 3.0f);

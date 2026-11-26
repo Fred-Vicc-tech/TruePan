@@ -249,12 +249,13 @@ inline float defaultParam(int index)
     }
 }
 
-// PAN som text: "C", "L35", "R100" (spaced = "L 35" för fönstret)
-inline void panText(double pan, char* out, size_t max, bool spaced)
+// PAN som text: "C", "18L", "50R" (Ableton-stil)
+inline void panText(double pan, char* out, size_t max, bool /*spaced*/)
 {
-    const int units = (int)std::floor(std::fabs(pan) * 100.0 + 0.5);
+    // Som i Ableton Live: 50L ... C ... 50R
+    const int units = (int)std::floor(std::fabs(pan) * 50.0 + 0.5);
     if (units == 0) std::snprintf(out, max, "C");
-    else std::snprintf(out, max, spaced ? "%c %d" : "%c%d", pan < 0 ? 'L' : 'R', units);
+    else std::snprintf(out, max, "%d%c", units, pan < 0 ? 'L' : 'R');
 }
 
 // Värdet som Live visar (utan enhet; enheten kommer från kParamLabels)

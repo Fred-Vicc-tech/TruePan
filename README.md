@@ -9,7 +9,7 @@ statisk runtime och `_WIN32_WINNT=0x0601`.
 
 | Del | Vad den gör |
 |---|---|
-| **PAN** | Flyttar ljudet från helt vänster (L 100) via mitten (C) till helt höger (R 100). Dubbelklick = mitten. |
+| **PAN** | Flyttar ljudet från helt vänster (50L) via mitten (C) till helt höger (50R), som i Ableton Live. Dubbelklick = mitten. |
 | **PAN LAW** | 0 / −3 / −4,5 / −6 dB. Mitten är alltid 0 dB, så pluginet ändrar inte nivån när PAN står i mitten. Standard −3 dB = ett monoljud låter lika starkt var det än står. |
 | **HEAD** | Psykoakustisk huvudmodell (knappen HEAD i grafens rubrikrad). Ersätter PAN LAW med det som händer vid riktiga öron: **tidsskillnad** (Woodworth: upp till ca 0,66 ms rakt från sidan) och **huvudskugga** (Brown & Duda 1998: bortre örat tappar diskant, närmaste örat får mer; basen påverkas nästan inte). Huvudstorlek 12–30 cm (standard 17,5 cm = forskningens effektiva huvud; större = överdriven effekt). PAN i mitten = oförändrat ljud. Grafen visar varje öras nivå vid 4 kHz och 500 Hz samt aktuell tidsskillnad (ITD). |
 | **DISTANCE** | 0,25–100 m (ratten i STEREO FIELD, standard 1 m = oförändrat). **Avståndslagen**: −6 dB per fördubblat avstånd. **Luftens dämpning** enligt ISO 9613-1 (20 °C, 50 % luftfuktighet): diskanten försvinner med avståndet (t.ex. ca −1 dB vid 8 kHz på 10 m, −10 dB på 100 m). Med HEAD även **närfält**: nära huvudet växer nivåskillnaden mellan öronen även i basen. Punkten i STEREO FIELD blir mindre ju längre bort ljudet är. |

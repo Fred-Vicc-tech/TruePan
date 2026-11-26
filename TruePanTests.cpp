@@ -966,8 +966,8 @@ int main()
     {
         char t[32];
         paramDisplayText(kParamPan, 0.5f, t, sizeof t);      bool ok = std::strcmp(t, "C") == 0;
-        paramDisplayText(kParamPan, 0.0f, t, sizeof t);      ok = ok && std::strcmp(t, "L100") == 0;
-        paramDisplayText(kParamPan, 0.75f, t, sizeof t);     ok = ok && std::strcmp(t, "R50") == 0;
+        paramDisplayText(kParamPan, 0.0f, t, sizeof t);      ok = ok && std::strcmp(t, "50L") == 0;
+        paramDisplayText(kParamPan, 0.75f, t, sizeof t);     ok = ok && std::strcmp(t, "25R") == 0;
         paramDisplayText(kParamWidth, 0.5f, t, sizeof t);    ok = ok && std::strcmp(t, "100") == 0;
         paramDisplayText(kParamMode, 1.0f, t, sizeof t);     ok = ok && std::strcmp(t, "Stereo") == 0;
         paramDisplayText(kParamLaw, defaultParam(kParamLaw), t, sizeof t); ok = ok && std::strcmp(t, "-3.0") == 0;
@@ -978,7 +978,7 @@ int main()
         paramDisplayText(kParamLesSpeed, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "1/32") == 0;
         paramDisplayText(kParamLesSpeed, defaultParam(kParamLesSpeed), t, sizeof t); ok = ok && std::strcmp(t, "Chorale") == 0;
         paramDisplayText(kParamLesModel, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "Vibra") == 0;
-        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32, Chorale, Vibra");
+        check(ok, "texter i Live: C, 50L, 25R, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32, Chorale, Vibra");
 
         bool namesShort = true;
         for (int i = 0; i < kNumParams; ++i) namesShort = namesShort && std::strlen(kParamNames[i]) <= 7;

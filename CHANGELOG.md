@@ -1,5 +1,11 @@
 # Ändringslogg
 
+## v2.1.1 – PAN i Ableton-stil (2026-11-26)
+- PAN visas som i Ableton Live: 50L … C … 50R (förut L 100 … R 100), även i Lives parametervisning,
+  STEREO FIELD och grafen.
+- Procentvärdet under WIDTH och DEPTH 2 px högre upp.
+- LEFT EAR / RIGHT EAR i HEAD-grafen flyttade åt höger.
+
 ## v2.1 – Ny layout enligt användarens bild (2026-11-26)
 - AUTO-PAN: vågform (PAN/TREM) eller modell (LESLIE) har en egen väljarrad med pilar under PAN/TREM/LESLIE,
   samma typ som PRESET. Vågformens symbol och namn (större text) i rutan.

@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2100;           // TruePan 2.1
+const VstInt32 kVersion = 2110;           // TruePan 2.1.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -444,7 +444,7 @@ const float kRow2Y = 323.0f + kDy, kRow2H = 130.0f;
 // AUTO-PAN, WIDTH/DEPTH och rattarna längre ner, högre graf, HEAD-knapparna i mitten.
 const float kGraphY = 494.0f, kGraphH = 186.0f;
 const float kKnobRowY = 272.0f;      // rattar i MODE och AUTO-PAN
-const float kKnobValueY = 315.0f;
+const float kKnobValueY = 313.0f;      // procent under WIDTH/DEPTH
 const float kLabelY = 199.0f;        // WIDTH / DEPTH
 const float kShapeRowY = 161.0f;     // vågform/modell-väljaren under PAN/TREM/LESLIE
 const float kBigKnobY = 192.0f;      // PAN och OUTPUT
@@ -817,7 +817,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.1.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -958,7 +958,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         Pen trackPen(Color(255, 60, 64, 70), 2.0f);
         g.DrawLine(&trackPen, fx0, fy, fx1, fy);
         const double tick[5] = { -1.0, -0.5, 0.0, 0.5, 1.0 };
-        const wchar_t* tickName[5] = { L"L 100", L"L 50", L"C", L"R 50", L"R 100" };
+        const wchar_t* tickName[5] = { L"50L", L"25L", L"C", L"25R", L"50R" };
         Pen tickPen(Color(255, 80, 85, 92), 1.0f);
         for (int i = 0; i < 5; ++i) {
             const float x = fieldX(tick[i]);
@@ -1064,7 +1064,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawText(g, lab, ff, 11, FontStyleRegular, kTextDim, 26, y - 8, 56, StringAlignmentFar);
     }
     const double gx[5] = { -1.0, -0.5, 0.0, 0.5, 1.0 };
-    const wchar_t* gxn[5] = { L"L 100", L"L 50", L"C", L"R 50", L"R 100" };
+    const wchar_t* gxn[5] = { L"50L", L"25L", L"C", L"25R", L"50R" };
     for (int i = 0; i < 5; ++i) {
         const float x = plotX(gx[i]);
         g.DrawLine(&grid, x, kPlotY0, x, kPlotY1);
@@ -1083,10 +1083,10 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         const double az = pos * 0.5 * kPi;
         g.FillEllipse(&ml, plotX(pos) - 5.0f, plotY(headEarGainDb(az, false, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
         g.FillEllipse(&mr, plotX(pos) - 5.0f, plotY(headEarGainDb(az, true, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
-        g.DrawLine(&ln, 640.0f, kGraphY + 18.0f, 664.0f, kGraphY + 18.0f);
-        drawText(g, L"LEFT EAR", ff, 12, FontStyleRegular, kText, 668, kGraphY + 10, 80, StringAlignmentNear);
-        g.DrawLine(&lr, 746.0f, kGraphY + 18.0f, 770.0f, kGraphY + 18.0f);
-        drawText(g, L"RIGHT EAR", ff, 12, FontStyleRegular, kText, 774, kGraphY + 10, 90, StringAlignmentNear);
+        g.DrawLine(&ln, 661.0f, kGraphY + 18.0f, 685.0f, kGraphY + 18.0f);
+        drawText(g, L"LEFT EAR", ff, 12, FontStyleRegular, kText, 689, kGraphY + 10, 70, StringAlignmentNear);
+        g.DrawLine(&lr, 762.0f, kGraphY + 18.0f, 786.0f, kGraphY + 18.0f);
+        drawText(g, L"RIGHT EAR", ff, 12, FontStyleRegular, kText, 790, kGraphY + 10, 80, StringAlignmentNear);
         drawText(g, L"Spherical head model: Woodworth ITD, Brown & Duda head shadow  \u00B7  solid = 4 kHz  \u00B7  dashed = 500 Hz  \u00B7  center is unchanged",
                  ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
     } else {
@@ -1339,7 +1339,7 @@ bool handleButtons(Editor* ed, int x, int y)
 float wheelStep(int param)
 {
     switch (param) {
-    case kParamPan: return 0.005f;                                               // 1 steg (L1/R1)
+    case kParamPan: return 0.01f;                                                // 1 steg (1L/1R)
     case kParamOutput: return 0.5f / (float)(kOutputMaxDb - kOutputMinDb);       // 0,5 dB
     case kParamRate: return 1.0f / (kNumRates - 1);                              // en notlängd
     case kParamLesSpeed: return 1.0f / (kNumLesSpeeds - 1);                      // ett steg
