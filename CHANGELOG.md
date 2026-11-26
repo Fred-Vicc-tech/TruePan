@@ -1,5 +1,14 @@
 # Ändringslogg
 
+## v1.6 – HEAD: psykoakustisk huvudmodell (2026-11-26)
+- Ny knapp HEAD (i grafens rubrikrad) med huvudstorlek 12–30 cm (standard 17,5 cm = effektiv huvudradie 8,75 cm).
+- Tidsskillnad mellan öronen enligt Brown & Duda / Woodworth: ITD = (a/c)(az + sin az), ca 0,66 ms rakt från sidan.
+- Huvudskugga enligt Brown & Duda (1998): första ordningens filter per öra, alpha(theta) med amin 0,1 och thetamin 150 grader.
+  Ljud från höger: 8 kHz +8 dB i höger öra och -8 dB i vänster; 200 Hz mindre än 0,5 dB skillnad.
+- Allt normerat mot läget rakt fram: PAN i mitten är helt oförändrat. Mjuk av/på, fungerar med AUTO-PAN.
+- Grafen visar i HEAD-läget varje öras nivå vid 4 kHz och 500 Hz och aktuell ITD.
+- HEAD är av som standard, så äldre projekt låter som förut.
+
 ## v1.5 – Leslie: riktverkan (dovare bakåt) (2026-11-26)
 - Hornet strålar diskanten som en ficklampa: brytfrekvensen följer riktningen på log-skala,
   ca 16 kHz rakt mot mikrofonen, 7 kHz åt sidan och 2,2 kHz rakt bort (12 dB/oktav).

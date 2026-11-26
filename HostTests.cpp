@@ -95,13 +95,13 @@ int main()
     // Parametrar
     char text[64] = {};
     const char* expectedNames[kNumParams] = { "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
-                                              "Monitor", "APMode", "LesSpd", "LesMod" };
-    bool namesOk = e->numParams == 13;
+                                              "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz" };
+    bool namesOk = e->numParams == 15;
     for (int i = 0; i < kNumParams; ++i) {
         e->dispatcher(e, effGetParamName, i, 0, text, 0);
         namesOk = namesOk && std::strcmp(text, expectedNames[i]) == 0;
     }
-    check(namesOk, "13 parametrar med stabila namn och index (de 9 forsta som i v1.0)");
+    check(namesOk, "15 parametrar med stabila namn och index (de 9 forsta som i v1.0)");
     check(e->dispatcher(e, effCanBeAutomated, 0, 0, nullptr, 0) == 1 && e->dispatcher(e, effCanBeAutomated, 99, 0, nullptr, 0) == 0,
           "parametrarna kan automatiseras");
 
@@ -198,8 +198,8 @@ int main()
         std::memcpy(v11.data() + 48 + kParamLesSpeed * 4, &s16, 4);
         o->dispatcher(o, effSetChunk, 0, (VstIntPtr)v11.size(), v11.data(), 0);
         o->dispatcher(o, effGetParamDisplay, kParamLesSpeed, 0, text, 0);
-        check(std::strcmp(text, "1/16") == 0 && o->getParameter(o, kParamLesModel) == 0.0f,
-              "projekt fran v1.2-1.3 med SPEED 1/16 oppnas som 1/16, modell 122");
+        check(std::strcmp(text, "1/16") == 0 && o->getParameter(o, kParamLesModel) == 0.0f && o->getParameter(o, kParamHead) == 0.0f,
+              "projekt fran v1.2-1.3 med SPEED 1/16 oppnas som 1/16, modell 122, HEAD av");
         o->dispatcher(o, effClose, 0, 0, nullptr, 0);
     }
 

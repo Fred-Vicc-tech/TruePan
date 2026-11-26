@@ -599,6 +599,101 @@ int main()
     }
 
     // ------------------------------------------------------------------
+    // HEAD: sfärisk huvudmodell (Woodworth ITD, Brown & Duda huvudskugga)
+    // ------------------------------------------------------------------
+    {
+        const double a = 0.0875;   // standard: effektiv huvudradie 8,75 cm
+        // Formlerna
+        const double itd90 = headItd(0.5 * kPi, a);
+        check(std::fabs(itd90 - (a / kSoundSpeed) * (0.5 * kPi + 1.0)) < 1e-12 && std::fabs(itd90 * 1000.0 - 0.656) < 0.005,
+              "ITD rakt fran sidan = Woodworth (a/c)(pi/2 + 1) = 0,656 ms");
+        bool woodOk = true;
+        for (int d = 0; d <= 90; d += 5) {
+            const double az = d * kPi / 180.0;
+            woodOk = woodOk && std::fabs(headItd(az, a) - (a / kSoundSpeed) * (az + std::sin(az))) < 1e-12
+                     && std::fabs(headItd(-az, a) + headItd(az, a)) < 1e-15;
+        }
+        check(woodOk, "ITD foljer Woodworth (az + sin az) for alla vinklar, symmetriskt, 0 i mitten");
+        check(std::fabs(headEarGainDb(0.0, true, 8000.0, a)) < 1e-12 && std::fabs(headEarGainDb(0.0, false, 8000.0, a)) < 1e-12,
+              "huvudskugga: rakt fram = 0 dB (normerat)");
+        const double far8 = headEarGainDb(0.5 * kPi, false, 8000.0, a), near8 = headEarGainDb(0.5 * kPi, true, 8000.0, a);
+        const double far200 = headEarGainDb(0.5 * kPi, false, 200.0, a), near200 = headEarGainDb(0.5 * kPi, true, 200.0, a);
+        std::printf("      (ljud fran hoger: 8 kHz narmaste %+.1f dB, bortre %+.1f dB; 200 Hz %+.1f / %+.1f dB)\n", near8, far8, near200, far200);
+        check(near8 - far8 > 15.0 && near200 - far200 < 1.0, "huvudskugga: stor nivaskillnad i diskanten, nastan ingen i basen");
+        check(near8 > 2.5, "narmaste orat far mer diskant (huvudet reflekterar)");
+
+        // Hela motorn
+        const int n = 48000;
+        Params p; p.v[kParamHead] = 1.0f;
+        std::vector<float> l(n), r(n), ol, orr;
+        std::srand(11);
+        for (int i = 0; i < n; ++i) { l[i] = (float)(std::rand() / (double)RAND_MAX - 0.5); r[i] = (float)(std::rand() / (double)RAND_MAX - 0.5); }
+        {
+            Engine e; e.prepare(kSr);
+            run(e, p, l, r, ol, orr);
+            double d = 0.0;
+            for (int i = 0; i < n; ++i) d = std::fmax(d, std::fmax(std::fabs(ol[i] - l[i]), std::fabs(orr[i] - r[i])));
+            check(d < 1e-5, "HEAD med PAN i mitten: ljudet helt oforandrat");
+        }
+        // Tidsskillnad i utsignalen (korskorrelation, brusig signal), PAN helt höger
+        {
+            Params q = p; q.v[kParamPan] = 1.0f;
+            Engine e; e.prepare(kSr);
+            run(e, q, l, l, ol, orr);
+            int best = 0; double bestV = -1e30;
+            auto xc = [&](int lag) { double s2 = 0; for (int i = 4000; i < n - 100; ++i) s2 += (double)orr[i] * ol[i + lag]; return s2; };
+            for (int lag = 0; lag < 80; ++lag) { const double v = xc(lag); if (v > bestV) { bestV = v; best = lag; } }
+            const double ym = xc(best - 1), y0 = xc(best), yp = xc(best + 1);
+            const double frac = best + 0.5 * (ym - yp) / (ym - 2.0 * y0 + yp);
+            const double ms = frac / kSr * 1000.0;
+            std::printf("      (uppmatt tidsskillnad vanster efter hoger: %.3f ms, teori %.3f ms)\n", ms, itd90 * 1000.0);
+            check(std::fabs(ms - itd90 * 1000.0) < 0.06, "HEAD helt hoger: vanster ora hor ljudet ca 0,66 ms senare");
+            // nivå i diskant/bas per kanal
+            std::vector<float> hi = sine(8000.0, n), lo = sine(200.0, n), a1, b1;
+            Engine eh; eh.prepare(kSr); run(eh, q, hi, hi, a1, b1);
+            const double dHi = db(rms(b1, 4000) / rms(a1, 4000));
+            Engine el; el.prepare(kSr); run(el, q, lo, lo, a1, b1);
+            const double dLo = db(rms(b1, 4000) / rms(a1, 4000));
+            std::printf("      (nivaskillnad hoger-vanster: 8 kHz %.1f dB, 200 Hz %.1f dB)\n", dHi, dLo);
+            check(std::fabs(dHi - (near8 - far8)) < 1.0 && dLo < 1.5, "HEAD i utsignalen stammer med modellen (diskant och bas)");
+        }
+        // Större huvud = större effekt (överdrift)
+        {
+            Params q = p; q.v[kParamHeadSize] = headSizeNorm(30.0);
+            check(std::fabs(headSizeCm(q.v[kParamHeadSize]) - 30.0) < 1e-4 && headItd(0.5 * kPi, 0.15) > 1.7 * itd90,
+                  "HEAD SIZE 30 cm: ca 1,7 ganger storre tidsskillnad an standard (overdriven effekt)");
+        }
+        // Av/på och AUTO-PAN med HEAD: inga klick
+        {
+            std::vector<float> s5 = sine(300.0, n), cl(n), cr(n);
+            Params off; off.v[kParamPan] = 0.85f;
+            Params on = off; on.v[kParamHead] = 1.0f;
+            Engine c; c.prepare(kSr);
+            for (int pos = 0; pos < n; pos += 480) {
+                c.setParams(pos < n / 2 ? off.v : on.v);
+                c.process(&s5[pos], &s5[pos], &cl[pos], &cr[pos], 480, false);
+            }
+            double jump = 0.0;
+            for (int i = n / 2 - 2000; i < n / 2 + 4000; ++i) jump = std::fmax(jump, std::fmax(std::fabs(cl[i] - cl[i - 1]), std::fabs(cr[i] - cr[i - 1])));
+            const double maxSlope = 0.5 * 2.0 * kPi * 300.0 / kSr;
+            check(jump < maxSlope * 1.8, "HEAD pa/av ger inget klick");
+
+            Params ap = on; ap.v[kParamPan] = 0.5f; ap.v[kParamDepth] = 1.0f; ap.v[kParamShape] = choiceNorm(kShapeSquare, kNumShapes);
+            Engine c2; c2.prepare(kSr);
+            run(c2, ap, s5, s5, cl, cr);
+            jump = 0.0;
+            bool fin = true;
+            for (int i = 1; i < n; ++i) { jump = std::fmax(jump, std::fabs(cl[i] - cl[i - 1])); fin = fin && std::isfinite(cl[i]); }
+            check(fin && jump < maxSlope * 2.5, "HEAD med AUTO-PAN (SQUARE): mjuka overgangar");
+        }
+        char tx[32];
+        paramDisplayText(kParamHeadSize, defaultParam(kParamHeadSize), tx, sizeof tx);
+        bool txOk = std::strcmp(tx, "17.5") == 0;
+        paramDisplayText(kParamHead, 1.0f, tx, sizeof tx);
+        check(txOk && std::strcmp(tx, "On") == 0 && defaultParam(kParamHead) == 0.0f, "texter: HeadSz 17.5 cm, Head On; HEAD av som standard");
+    }
+
+    // ------------------------------------------------------------------
     // Egna presetfiler
     // ------------------------------------------------------------------
     {

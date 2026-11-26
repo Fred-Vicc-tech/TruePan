@@ -42,16 +42,18 @@ enum {
     kParamFxMode,
     kParamLesSpeed,
     kParamLesModel,
+    kParamHead,
+    kParamHeadSize,
     kNumParams
 };
 
 // Högst 7 tecken (Live 9 visar inte fler).
 static const char* const kParamNames[kNumParams] = {
     "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
-    "Monitor", "APMode", "LesSpd", "LesMod"
+    "Monitor", "APMode", "LesSpd", "LesMod", "Head", "HeadSz"
 };
 static const char* const kParamLabels[kNumParams] = {
-    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", "", ""
+    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", "", "", "", "cm"
 };
 
 // --- Val (knappar/väljare) ------------------------------------------------
@@ -148,6 +150,14 @@ inline int fxModeFromNorm(float n) { return choiceFromNorm(n, kNumFxModes); }
 inline int lesSpeedFromNorm(float n) { return choiceFromNorm(n, kNumLesSpeeds); }
 inline int lesModelFromNorm(float n) { return choiceFromNorm(n, kNumLesModels); }
 
+// HEAD: huvudstorlek som effektiv huvuddiameter 12-30 cm. Standard 17,5 cm =
+// forskningens effektiva huvudradie 8,75 cm (Woodworth; Brown & Duda), som ger
+// den uppmätta största tidsskillnaden ca 0,66 ms. Större = överdriven effekt.
+const double kHeadMinCm = 12.0, kHeadMaxCm = 30.0, kHeadStdCm = 17.5;
+inline bool headOn(float n) { return n >= 0.5f; }
+inline double headSizeCm(float n) { return kHeadMinCm + clampd(n, 0.0f, 1.0f) * (kHeadMaxCm - kHeadMinCm); }
+inline float headSizeNorm(double cm) { return (float)clampd((cm - kHeadMinCm) / (kHeadMaxCm - kHeadMinCm), 0.0, 1.0); }
+
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
 inline bool lowMonoOn(float n) { return n >= 0.001f; }
@@ -186,6 +196,8 @@ inline float defaultParam(int index)
     case kParamFxMode:  return 0.0f;                            // PAN
     case kParamLesSpeed: return choiceNorm(kLesChorale, kNumLesSpeeds);
     case kParamLesModel: return 0.0f;                           // 122
+    case kParamHead:    return 0.0f;                            // av (äldre projekt låter som förut)
+    case kParamHeadSize: return headSizeNorm(kHeadStdCm);
     default:            return 0.0f;
     }
 }
@@ -218,6 +230,8 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     case kParamFxMode:  std::snprintf(out, max, "%s", kFxNames[fxModeFromNorm(n)]); break;
     case kParamLesSpeed: std::snprintf(out, max, "%s", kLesSpeedNames[lesSpeedFromNorm(n)]); break;
     case kParamLesModel: std::snprintf(out, max, "%s", kLesModelNames[lesModelFromNorm(n)]); break;
+    case kParamHead:    std::snprintf(out, max, "%s", headOn(n) ? "On" : "Off"); break;
+    case kParamHeadSize: std::snprintf(out, max, "%.1f", headSizeCm(n)); break;
     default:            std::snprintf(out, max, "-"); break;
     }
 }
@@ -506,6 +520,140 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// HEAD: sfärisk huvudmodell (psykoakustik).
+//  - Tidsskillnad (ITD): Brown & Duda (1998) / Woodworth: per öra
+//      T(theta) = -(a/c) cos(theta)        för 0 <= theta < 90 grader
+//      T(theta) = (a/c)(theta - pi/2)      för 90 <= theta <= 180 grader
+//    där theta är vinkeln mellan ljudkällan och örats riktning. Skillnaden
+//    mellan öronen blir Woodworths ITD = (a/c)(az + sin az).
+//  - Huvudskugga (ILD): Brown & Duda, första ordningens filter per öra
+//      H(w, theta) = (1 + j alpha(theta) w/(2 w0)) / (1 + j w/(2 w0)),  w0 = c/a
+//      alpha(theta) = (1 + amin/2) + (1 - amin/2) cos(theta/thetamin * 180 grader)
+//    med amin = 0,1 och thetamin = 150 grader. Basen påverkas nästan inte (vågorna
+//    böjer sig runt huvudet), diskanten dämpas mycket på bortre örat och höjs upp
+//    till +6 dB på närmaste örat.
+// Allt räknas relativt läget rakt fram, så PAN i mitten är helt oförändrat ljud.
+// ---------------------------------------------------------------------------
+const double kSoundSpeed = 343.0;     // m/s vid ca 20 grader C
+
+inline double headAlpha(double theta)  // theta i radianer, 0..pi
+{
+    const double amin = 0.1, thetaMin = 150.0 * kPi / 180.0;
+    return (1.0 + amin / 2.0) + (1.0 - amin / 2.0) * std::cos(theta / thetaMin * kPi);
+}
+inline double headEarDelay(double theta, double a)  // sekunder (kan vara negativ)
+{
+    theta = std::fabs(theta);
+    if (theta < 0.5 * kPi) return -(a / kSoundSpeed) * std::cos(theta);
+    return (a / kSoundSpeed) * (theta - 0.5 * kPi);
+}
+// Vinkeln mellan källan och vänster/höger öra. az = azimut (-pi/2 = vänster, +pi/2 = höger).
+inline double earAngleLeft(double az)  { return std::fabs(az + 0.5 * kPi); }
+inline double earAngleRight(double az) { return std::fabs(az - 0.5 * kPi); }
+// Tidsskillnad mellan öronen (s), positiv = höger öra först
+inline double headItd(double az, double a)
+{
+    return headEarDelay(earAngleLeft(az), a) - headEarDelay(earAngleRight(az), a);
+}
+// Örats nivå (dB) vid frekvensen hz, relativt läget rakt fram (PAN i mitten)
+inline double headEarGainDb(double az, bool rightEar, double hz, double a)
+{
+    const double w = 2.0 * kPi * hz, w0 = kSoundSpeed / a;
+    const double th = rightEar ? earAngleRight(az) : earAngleLeft(az);
+    auto mag = [&](double alpha) {
+        const double x = w / (2.0 * w0);
+        return std::sqrt((1.0 + alpha * alpha * x * x) / (1.0 + x * x));
+    };
+    return 20.0 * std::log10(mag(headAlpha(th)) / mag(headAlpha(0.5 * kPi)));
+}
+
+class HeadModel
+{
+public:
+    static const int kBufSize = 4096;    // räcker till 768 kHz och 30 cm huvud (ca 1,1 ms)
+
+    HeadModel() : bufL_(kBufSize, 0.0), bufR_(kBufSize, 0.0) {}
+
+    void prepare(double sr, double a)
+    {
+        sr_ = sr;
+        setRadius(a);
+        reset();
+    }
+    void setRadius(double a)
+    {
+        a_ = clampd(a, 0.05, 0.16);
+        w0_ = kSoundSpeed / a_;
+        alpha0_ = headAlpha(0.5 * kPi);   // läget rakt fram (normering)
+        // Omvänt filter för läget rakt fram: (2w0 + s)/(2w0 + alpha0 s), bilinjär
+        const double fs = sr_;
+        const double d0 = w0_ + alpha0_ * fs;
+        inv_.b0 = (w0_ + fs) / d0;
+        inv_.b1 = (w0_ - fs) / d0;
+        inv_.a1 = (w0_ - alpha0_ * fs) / d0;
+    }
+    void reset()
+    {
+        std::fill(bufL_.begin(), bufL_.end(), 0.0);
+        std::fill(bufR_.begin(), bufR_.end(), 0.0);
+        earL_ = Ear(); earR_ = Ear();
+        w_ = 0;
+    }
+    double radius() const { return a_; }
+
+    // pos = -1 (vänster) .. +1 (höger) -> azimut -90 .. +90 grader
+    void process(double inL, double inR, double pos, double& outL, double& outR)
+    {
+        bufL_[w_] = inL;
+        bufR_[w_] = inR;
+        const double az = clampd(pos, -1.0, 1.0) * 0.5 * kPi;
+        const double thL = earAngleLeft(az), thR = earAngleRight(az);
+        // Fördröjning per öra, relativt det öra som hör först (rakt fram: 0 och 0)
+        const double dL = headEarDelay(thL, a_), dR = headEarDelay(thR, a_);
+        const double first = dL < dR ? dL : dR;
+        outL = shade(earL_, read(bufL_, (dL - first) * sr_), headAlpha(thL));
+        outR = shade(earR_, read(bufR_, (dR - first) * sr_), headAlpha(thR));
+        w_ = (w_ + 1) & (kBufSize - 1);
+    }
+
+private:
+    struct Section { double b0 = 1.0, b1 = 0.0, a1 = 0.0; };
+    struct Ear { double x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0; };
+
+    // Huvudskugga för vinkeln (alpha) följt av normeringen mot läget rakt fram
+    double shade(Ear& e, double x, double alpha)
+    {
+        const double fs = sr_, d = w0_ + fs;
+        const double b0 = (w0_ + alpha * fs) / d, b1 = (w0_ - alpha * fs) / d, a1 = (w0_ - fs) / d;
+        const double y = b0 * x + b1 * e.x1 - a1 * e.y1;
+        e.x1 = x; e.y1 = y;
+        const double z = inv_.b0 * y + inv_.b1 * e.x2 - inv_.a1 * e.y2;
+        e.x2 = y; e.y2 = z;
+        return z;
+    }
+    double read(const std::vector<double>& buf, double delay) const
+    {
+        if (delay <= 0.0) return buf[w_];
+        const int di = (int)delay;
+        const double f = delay - di;
+        const int m = kBufSize - 1;
+        const double y0 = buf[(w_ - di + 1) & m], y1 = buf[(w_ - di) & m];
+        const double y2 = buf[(w_ - di - 1) & m], y3 = buf[(w_ - di - 2) & m];
+        if (di == 0) return y1 + (y2 - y1) * f;   // inget framtida sampel: linjärt sista biten
+        const double c1 = 0.5 * (y2 - y0);
+        const double c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+        const double c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+        return ((c3 * f + c2) * f + c1) * f + y1;
+    }
+
+    double sr_ = 44100.0, a_ = 0.0875, w0_ = 343.0 / 0.0875, alpha0_ = 1.0;
+    Section inv_;
+    std::vector<double> bufL_, bufR_;
+    Ear earL_, earR_;
+    int w_ = 0;
+};
+
+// ---------------------------------------------------------------------------
 // Motorn
 // ---------------------------------------------------------------------------
 class Engine
@@ -520,6 +668,7 @@ public:
         fadeCoef_ = 1.0 - std::exp(-1.0 / (0.020 * sr_));     // 20 ms (LOW MONO av/på)
         filterHz_ = -1.0;
         leslie_.prepare(sr_);
+        head_.prepare(sr_, headRadius_);
         reset();
     }
 
@@ -528,6 +677,7 @@ public:
         for (int i = 0; i < 2; ++i) { hpL_[i].reset(); hpR_[i].reset(); }
         lpM_.reset();
         leslie_.reset();
+        head_.reset();
         snap_ = true;
         peakL_ = peakR_ = 0.0;
     }
@@ -550,6 +700,9 @@ public:
         lesSpeed_ = lesSpeedFromNorm(n[kParamLesSpeed]);
         const int model = lesModelFromNorm(n[kParamLesModel]);
         if (model != leslie_.model()) leslie_.setModel(model);
+        headOn_ = headOn(n[kParamHead]);
+        headRadius_ = headSizeCm(n[kParamHeadSize]) * 0.005;   // cm -> radie i meter
+        if (headRadius_ != head_.radius()) head_.setRadius(headRadius_);
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
@@ -625,6 +778,7 @@ public:
             if (snap_) {
                 gl_ = tgl; gr_ = tgr; side_ = tside; out_ = outGain_; low_ = tlow;
                 trem_ = ttrem; les_ = tles;
+                headPos_ = pos; headMix_ = headOn_ ? 1.0 : 0.0;
                 snap_ = false;
             } else {
                 gl_ += (tgl - gl_) * smoothCoef_;
@@ -635,6 +789,10 @@ public:
                 if (std::fabs(low_ - tlow) < 1e-6) low_ = tlow;
                 trem_ += (ttrem - trem_) * smoothCoef_;
                 les_ += (tles - les_) * fadeCoef_;
+                headPos_ += (pos - headPos_) * smoothCoef_;
+                const double thead = headOn_ ? 1.0 : 0.0;
+                headMix_ += (thead - headMix_) * fadeCoef_;
+                if (std::fabs(headMix_ - thead) < 1e-6) headMix_ = thead;
                 if (std::fabs(les_ - tles) < 1e-6) les_ = tles;
             }
 
@@ -670,10 +828,22 @@ public:
                 }
             }
 
-            // Panorering + bas i mitten + TREMOLO + OUTPUT
+            // Panorering: PAN LAW eller HEAD (huvudmodellen ersätter nivåpanoreringen).
+            // Huvudmodellen körs alltid (fördröjningen hålls fylld), så att av/på inte klickar.
+            double pl = yl * gl_, pr = yr * gr_;
+            {
+                double hl, hr;
+                head_.process(yl, yr, headPos_, hl, hr);
+                if (headMix_ > 0.0) {
+                    pl += (hl - pl) * headMix_;
+                    pr += (hr - pr) * headMix_;
+                }
+            }
+
+            // + bas i mitten + TREMOLO + OUTPUT
             const double g = trem_ * out_;
-            double ol = (yl * gl_ + bass) * g;
-            double orr = (yr * gr_ + bass) * g;
+            double ol = (pl + bass) * g;
+            double orr = (pr + bass) * g;
 
             // MONITOR: lyssna på hela, mono, bara mitten eller bara sidorna
             if (monitor_ == kMonMono || monitor_ == kMonMid) { const double m = (ol + orr) * 0.5; ol = orr = m; }
@@ -699,6 +869,7 @@ public:
     double phase() const { return phase_; }
     double tempo() const { return tempo_; }
     double sampleRate() const { return sr_; }
+    double headRadius() const { return head_.radius(); }
     double leslieHornHz() const { return leslie_.hornHz(); }
     double leslieDrumHz() const { return leslie_.drumHz(); }
 
@@ -726,6 +897,11 @@ private:
     double filterHz_ = -1.0;
 
     Leslie leslie_;
+
+    // HEAD
+    HeadModel head_;
+    bool headOn_ = false;
+    double headRadius_ = kHeadStdCm * 0.005, headPos_ = 0.0, headMix_ = 0.0;
 
     // visning
     double displayPos_ = 0.0, peakL_ = 0.0, peakR_ = 0.0;

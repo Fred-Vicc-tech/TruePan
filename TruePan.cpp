@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1500;           // TruePan 1.5
+const VstInt32 kVersion = 1600;           // TruePan 1.6
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 4 (v1.4: modeller, STOP/CHORALE/TREMOLO; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
+    uint32_t version;       // 5 (v1.6: HEAD; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 4;
+        p->chunk.version = 5;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -485,6 +485,10 @@ struct Editor
     RectDef presetPrev = { colX(3) + 14.0f,  357.0f, 30.0f, 30.0f };
     RectDef presetNext = { colX(3) + 162.0f, 357.0f, 30.0f, 30.0f };
     RectDef btnSave    = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
+    // HEAD i grafens rubrikrad: knapp och huvudstorlek < 17.5 cm >
+    RectDef btnHead    = { 190.0f, 468.0f, 64.0f, 26.0f };
+    RectDef headDown   = { 262.0f, 468.0f, 26.0f, 26.0f };
+    RectDef headUp     = { 396.0f, 468.0f, 26.0f, 26.0f };
     RectDef btnLoad    = { colX(3) + 106.0f, 401.0f, 84.0f, 34.0f };
 
     float meterL = 0.0f, meterR = 0.0f;   // nivåmätare med mjukt fall
@@ -679,7 +683,8 @@ void wideFromNarrow(const char* in, wchar_t* out, int max)
 
 // Grafens koordinater (PAN LAW)
 const float kPlotX0 = 86.0f, kPlotX1 = 850.0f, kPlotY0 = 503.0f, kPlotY1 = 591.0f;
-const float kPlotDbMax = 6.0f, kPlotDbMin = -24.0f;
+static float kPlotDbMax = 6.0f;           // +12 dB i HEAD-läget (närmaste örat får mer diskant)
+const float kPlotDbMin = -24.0f;
 
 float plotX(double pos) { return kPlotX0 + (float)((pos + 1.0) * 0.5) * (kPlotX1 - kPlotX0); }
 float plotY(double db)
@@ -690,6 +695,20 @@ float plotY(double db)
 }
 
 enum CurveKind { kCurveLeft, kCurveRight, kCurveTotal };
+
+// HEAD-läget: örats nivå vid frekvensen hz för alla positioner
+void drawHeadCurve(Graphics& g, bool rightEar, double hz, double a, const Color& color, float width, bool dashed)
+{
+    const int n = 101;
+    PointF pts[n];
+    for (int i = 0; i < n; ++i) {
+        const double pos = -1.0 + 2.0 * i / (n - 1);
+        pts[i] = PointF(plotX(pos), plotY(headEarGainDb(pos * 0.5 * kPi, rightEar, hz, a)));
+    }
+    Pen pen(color, width);
+    if (dashed) pen.SetDashStyle(DashStyleDash);
+    g.DrawLines(&pen, pts, n);
+}
 
 void drawLawCurve(Graphics& g, int law, CurveKind kind, const Color& color, float width, bool dashed)
 {
@@ -746,6 +765,8 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     const int law = lawFromNorm(pv[kParamLaw]);
     const int shape = shapeFromNorm(pv[kParamShape]);
     const int fxMode = fxModeFromNorm(pv[kParamFxMode]);
+    const bool headMode = headOn(pv[kParamHead]);
+    const double headA = headSizeCm(pv[kParamHeadSize]) * 0.005;
     const int monitor = monitorFromNorm(pv[kParamMonitor]);
     const double depth = depthFromNorm(pv[kParamDepth]);
     const bool autoOn = depth > 0.0005;
@@ -770,7 +791,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.5", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.6", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -793,8 +814,9 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawBox(g, bx, ed->lawDown.y, bw, ed->lawDown.h);
         wchar_t lw[16];
         wideFromNarrow(kLawNames[law], lw, 16);
-        swprintf(txt, 64, L"LAW %ls dB", lw);
-        drawText(g, txt, ff, 13, FontStyleBold, kCyan, bx, ed->lawDown.y + 6.0f, bw, StringAlignmentCenter);
+        if (headMode) swprintf(txt, 64, L"HEAD MODEL");      // huvudmodellen ersätter PAN LAW
+        else swprintf(txt, 64, L"LAW %ls dB", lw);
+        drawText(g, txt, ff, 13, FontStyleBold, headMode ? kTextDim : kCyan, bx, ed->lawDown.y + 6.0f, bw, StringAlignmentCenter);
     }
 
     // --- MODE + WIDTH + LOW MONO ---
@@ -965,12 +987,30 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawButton(g, ff, ed->btnSave, L"SAVE", false, kCyan);
     drawButton(g, ff, ed->btnLoad, L"LOAD", false, kCyan);
 
-    // === PAN LAW-graf ===
+    // === PAN LAW-graf / HEAD-graf ===
     drawPanel(g, 20, kGraphY, 860, kGraphH);
-    drawText(g, L"PAN LAW", ff, 16, FontStyleBold, kText, 38, kGraphY + 8, 300, StringAlignmentNear);
+    drawText(g, headMode ? L"HEAD" : L"PAN LAW", ff, 16, FontStyleBold, kText, 38, kGraphY + 8, 140, StringAlignmentNear);
+    {
+        // HEAD-knapp, huvudstorlek och tidsskillnaden just nu
+        drawButton(g, ff, ed->btnHead, L"HEAD", headMode, kOrange, 13.0f);
+        drawButton(g, ff, ed->headDown, L"<", false, kCyan);
+        drawButton(g, ff, ed->headUp, L">", false, kCyan);
+        const float bx = ed->headDown.x + ed->headDown.w + 4.0f, bw = ed->headUp.x - bx - 4.0f;
+        drawBox(g, bx, ed->headDown.y, bw, ed->headDown.h);
+        swprintf(txt, 64, L"%.1f cm", headSizeCm(pv[kParamHeadSize]));
+        drawText(g, txt, ff, 12, FontStyleBold, headMode ? kCyan : kTextDim, bx, ed->headDown.y + 5.0f, bw, StringAlignmentCenter);
+        if (headMode) {
+            const double itd = std::fabs(headItd(pos * 0.5 * kPi, headA)) * 1000.0;
+            swprintf(txt, 64, L"ITD %.2f ms", itd);
+            drawText(g, txt, ff, 12, FontStyleBold, kOrange, 432, kGraphY + 12, 120, StringAlignmentNear);
+        }
+    }
+    kPlotDbMax = headMode ? 12.0f : 6.0f;
 
     Pen grid(kGrid, 1.0f);
-    const int dbs[4] = { -24, -12, 0, 6 };
+    const int dbsLaw[4] = { -24, -12, 0, 6 };
+    const int dbsHead[4] = { -24, -12, 0, 12 };
+    const int* dbs = headMode ? dbsHead : dbsLaw;
     for (int i = 0; i < 4; ++i) {
         const float y = plotY(dbs[i]);
         g.DrawLine(&grid, kPlotX0, y, kPlotX1, y);
@@ -986,27 +1026,42 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawText(g, gxn[i], ff, 11, FontStyleRegular, kTextDim, x - 30, kPlotY1 + 2, 60, StringAlignmentCenter);
     }
 
-    drawLawCurve(g, law, kCurveTotal, kText, 1.5f, true);
-    drawLawCurve(g, law, kCurveLeft, kCyan, 3.0f, false);
-    drawLawCurve(g, law, kCurveRight, kOrange, 3.0f, false);
-    {
+    Pen ln(kCyan, 3.0f), lr(kOrange, 3.0f), lt(kText, 1.5f);
+    lt.SetDashStyle(DashStyleDash);
+    if (headMode) {
+        // Varje öras nivå: heldragen = 4 kHz (huvudskuggan tydlig), streckad = 500 Hz (nästan ingen)
+        drawHeadCurve(g, false, 500.0, headA, kCyan, 1.5f, true);
+        drawHeadCurve(g, true, 500.0, headA, kOrange, 1.5f, true);
+        drawHeadCurve(g, false, 4000.0, headA, kCyan, 3.0f, false);
+        drawHeadCurve(g, true, 4000.0, headA, kOrange, 3.0f, false);
+        SolidBrush ml(kCyan), mr(kOrange);
+        const double az = pos * 0.5 * kPi;
+        g.FillEllipse(&ml, plotX(pos) - 5.0f, plotY(headEarGainDb(az, false, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
+        g.FillEllipse(&mr, plotX(pos) - 5.0f, plotY(headEarGainDb(az, true, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
+        g.DrawLine(&ln, 600.0f, kGraphY + 20.0f, 624.0f, kGraphY + 20.0f);
+        drawText(g, L"LEFT EAR", ff, 12, FontStyleRegular, kText, 628, kGraphY + 12, 80, StringAlignmentNear);
+        g.DrawLine(&lr, 722.0f, kGraphY + 20.0f, 746.0f, kGraphY + 20.0f);
+        drawText(g, L"RIGHT EAR", ff, 12, FontStyleRegular, kText, 750, kGraphY + 12, 100, StringAlignmentNear);
+        drawText(g, L"Spherical head model: Woodworth ITD, Brown & Duda head shadow  \u00B7  solid = 4 kHz  \u00B7  dashed = 500 Hz  \u00B7  center is unchanged",
+                 ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
+    } else {
+        drawLawCurve(g, law, kCurveTotal, kText, 1.5f, true);
+        drawLawCurve(g, law, kCurveLeft, kCyan, 3.0f, false);
+        drawLawCurve(g, law, kCurveRight, kOrange, 3.0f, false);
         double gl, gr;
         panGains(pos, law, gl, gr);
         SolidBrush ml(kCyan), mr(kOrange);
         g.FillEllipse(&ml, plotX(pos) - 5.0f, plotY(gainToDb(gl)) - 5.0f, 10.0f, 10.0f);
         g.FillEllipse(&mr, plotX(pos) - 5.0f, plotY(gainToDb(gr)) - 5.0f, 10.0f, 10.0f);
+        g.DrawLine(&ln, 560.0f, kGraphY + 20.0f, 584.0f, kGraphY + 20.0f);
+        drawText(g, L"LEFT", ff, 12, FontStyleRegular, kText, 588, kGraphY + 12, 60, StringAlignmentNear);
+        g.DrawLine(&lr, 636.0f, kGraphY + 20.0f, 660.0f, kGraphY + 20.0f);
+        drawText(g, L"RIGHT", ff, 12, FontStyleRegular, kText, 664, kGraphY + 12, 60, StringAlignmentNear);
+        g.DrawLine(&lt, 718.0f, kGraphY + 20.0f, 742.0f, kGraphY + 20.0f);
+        drawText(g, L"LOUDNESS", ff, 12, FontStyleRegular, kText, 746, kGraphY + 12, 100, StringAlignmentNear);
+        drawText(g, L"Center is always 0 dB  \u00B7  LOW MONO bass stays in the center  \u00B7  dashed = total loudness of a mono source",
+                 ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
     }
-
-    Pen ln(kCyan, 3.0f), lr(kOrange, 3.0f), lt(kText, 1.5f);
-    lt.SetDashStyle(DashStyleDash);
-    g.DrawLine(&ln, 560.0f, kGraphY + 20.0f, 584.0f, kGraphY + 20.0f);
-    drawText(g, L"LEFT", ff, 12, FontStyleRegular, kText, 588, kGraphY + 12, 60, StringAlignmentNear);
-    g.DrawLine(&lr, 636.0f, kGraphY + 20.0f, 660.0f, kGraphY + 20.0f);
-    drawText(g, L"RIGHT", ff, 12, FontStyleRegular, kText, 664, kGraphY + 12, 60, StringAlignmentNear);
-    g.DrawLine(&lt, 718.0f, kGraphY + 20.0f, 742.0f, kGraphY + 20.0f);
-    drawText(g, L"LOUDNESS", ff, 12, FontStyleRegular, kText, 746, kGraphY + 12, 100, StringAlignmentNear);
-    drawText(g, L"Center is always 0 dB  ·  LOW MONO bass stays in the center  ·  dashed = total loudness of a mono source",
-             ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
 
     Graphics screen(hdc);
     screen.DrawImage(&buffer, 0, 0, width, height);
@@ -1218,6 +1273,17 @@ bool handleButtons(Editor* ed, int x, int y)
     }
     if (!ed->leslieMode() && ed->shapeBox.hit(x, y)) {
         stepChoice(ed, kParamShape, kNumShapes, +1, true);
+        return true;
+    }
+    if (ed->btnHead.hit(x, y)) {
+        setParamOnce(ed, kParamHead, headOn(ed->plugin->params[kParamHead].load()) ? 0.0f : 1.0f);
+        return true;
+    }
+    if (ed->headDown.hit(x, y) || ed->headUp.hit(x, y)) {
+        // 0,5 cm per klick
+        const float step = 0.5f / (float)(kHeadMaxCm - kHeadMinCm);
+        const float v = ed->plugin->params[kParamHeadSize].load() + (ed->headUp.hit(x, y) ? step : -step);
+        setParamOnce(ed, kParamHeadSize, v);
         return true;
     }
     if (ed->presetPrev.hit(x, y)) { stepPreset(ed, -1); return true; }
