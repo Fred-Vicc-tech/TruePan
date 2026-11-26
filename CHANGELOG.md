@@ -1,5 +1,14 @@
 # Ändringslogg
 
+## v2.1 – Ny layout enligt användarens bild (2026-11-26)
+- AUTO-PAN: vågform (PAN/TREM) eller modell (LESLIE) har en egen väljarrad med pilar under PAN/TREM/LESLIE,
+  samma typ som PRESET. Vågformens symbol och namn (större text) i rutan.
+- WIDTH/DEPTH och rattarna längre ner i panelerna; värdet under PAN och OUTPUT 3 px längre ner.
+- Over 0 dB längre åt höger i OUTPUT-rubriken. DISTANCE-ratten 2 px längre ner.
+- Grafen 14 px högre (mer luft under rubriken), HEAD-knappen och huvudstorleken i mitten av rubrikraden,
+  förklaringen (LEFT/RIGHT/LOUDNESS) längre åt höger. ITD-visningen till höger om huvudstorleken.
+- Fönstret är 701 px högt.
+
 ## v2.0.1 – Inget hack när Lives loop börjar om (2026-11-26)
 - När Live spelar med loop hoppade AUTO-PAN-mönstret (PARADIDDLE m.fl.) till rätt läge först i nästa
   ljudblock (upp till ca 12 ms för sent). Det gav ett hack vid varje nytt varv. Nu läses loopens start

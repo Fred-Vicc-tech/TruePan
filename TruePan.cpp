@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2010;           // TruePan 2.0.1
+const VstInt32 kVersion = 2100;           // TruePan 2.1
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -390,7 +390,7 @@ VST_EXPORT AEffect* VSTPluginMain(audioMasterCallback host)
     e.version = kVersion;
 
     p->rect.top = 0; p->rect.left = 0;
-    p->rect.bottom = 686; p->rect.right = 900;
+    p->rect.bottom = 701; p->rect.right = 900;
 
     return &e;   // motorn är redan förberedd för 44,1 kHz (Live skickar rätt frekvens före start)
 }
@@ -440,13 +440,16 @@ inline float colX(int i) { return 20.0f + i * 218.0f; }  // fyra lika breda kolu
 const float kDy = 30.0f;
 const float kRow1Y = 83.0f, kRow1H = 260.0f;
 const float kRow2Y = 323.0f + kDy, kRow2H = 130.0f;
-const float kGraphY = 463.0f + kDy, kGraphH = 172.0f;
-const float kKnobRowY = 256.0f;      // rattar i MODE och AUTO-PAN (+17)
-const float kKnobValueY = 299.0f;
-const float kLabelY = 171.0f;        // WIDTH / DEPTH (+8)
-const float kBigKnobY = 192.0f;      // PAN och OUTPUT (+11)
-const float kBigValueY = 249.0f;     // värdet under PAN och OUTPUT (+16)
-const float kSelY = 296.0f;          // LAW- och MONITOR-väljarna (+30)
+// v2.1: layout enligt användarens bild (GUI_02): egen rad för vågform/modell i
+// AUTO-PAN, WIDTH/DEPTH och rattarna längre ner, högre graf, HEAD-knapparna i mitten.
+const float kGraphY = 494.0f, kGraphH = 186.0f;
+const float kKnobRowY = 272.0f;      // rattar i MODE och AUTO-PAN
+const float kKnobValueY = 315.0f;
+const float kLabelY = 199.0f;        // WIDTH / DEPTH
+const float kShapeRowY = 161.0f;     // vågform/modell-väljaren under PAN/TREM/LESLIE
+const float kBigKnobY = 192.0f;      // PAN och OUTPUT
+const float kBigValueY = 252.0f;     // värdet under PAN och OUTPUT
+const float kSelY = 296.0f;          // LAW- och MONITOR-väljarna
 const float kSideKnobDX = 157.0f;
 const float kFieldX = 20.0f, kFieldW = 642.0f;
 
@@ -476,7 +479,7 @@ struct Editor
         { kParamRate,    colX(2) + kSideKnobDX, kKnobRowY, 20.0f },
         { kParamOutput,  colX(3) + 103.0f, kBigKnobY, 44.0f },
         { kParamLesSpeed, colX(2) + kSideKnobDX, kKnobRowY, 20.0f }, // samma plats som RATE (LESLIE)
-        { kParamDistance, 604.0f, 392.0f + kDy, 20.0f },                   // DISTANCE i STEREO FIELD
+        { kParamDistance, 604.0f, 424.0f, 20.0f },                   // DISTANCE i STEREO FIELD
     };
     int dragKnob = -1;
     int dragStartY = 0;
@@ -493,14 +496,17 @@ struct Editor
     RectDef btnFx[kNumFxModes] = { { colX(2) + 14.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 75.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 136.0f, 119.0f, 56.0f, 34.0f } };
-    RectDef shapeBox   = { colX(2) + 80.0f, kLabelY - 3.0f, 112.0f, 26.0f };   // LESLIE: modellväljaren (vänster halva = föregående)
+    // Vågform (PAN/TREM) eller modell (LESLIE): < ruta >, samma typ som PRESET
+    RectDef shapePrev  = { colX(2) + 14.0f,  kShapeRowY, 30.0f, 30.0f };
+    RectDef shapeNext  = { colX(2) + 162.0f, kShapeRowY, 30.0f, 30.0f };
+    RectDef shapeBox   = { colX(2) + 48.0f,  kShapeRowY, 110.0f, 30.0f };
     RectDef presetPrev = { colX(3) + 14.0f,  357.0f + kDy, 30.0f, 30.0f };
     RectDef presetNext = { colX(3) + 162.0f, 357.0f + kDy, 30.0f, 30.0f };
     RectDef btnSave    = { colX(3) + 14.0f,  401.0f + kDy, 84.0f, 34.0f };
     // HEAD i grafens rubrikrad: knapp och huvudstorlek < 17.5 cm >
-    RectDef btnHead    = { 190.0f, 468.0f + kDy, 64.0f, 26.0f };
-    RectDef headDown   = { 262.0f, 468.0f + kDy, 26.0f, 26.0f };
-    RectDef headUp     = { 396.0f, 468.0f + kDy, 26.0f, 26.0f };
+    RectDef btnHead    = { 278.0f, 507.0f, 60.0f, 26.0f };
+    RectDef headDown   = { 346.0f, 507.0f, 26.0f, 26.0f };
+    RectDef headUp     = { 442.0f, 507.0f, 26.0f, 26.0f };
     RectDef btnLoad    = { colX(3) + 106.0f, 401.0f + kDy, 84.0f, 34.0f };
 
     float meterL = 0.0f, meterR = 0.0f;   // nivåmätare med mjukt fall
@@ -702,7 +708,7 @@ void wideFromNarrow(const char* in, wchar_t* out, int max)
 }
 
 // Grafens koordinater (PAN LAW)
-const float kPlotX0 = 86.0f, kPlotX1 = 850.0f, kPlotY0 = 503.0f + kDy, kPlotY1 = 591.0f + kDy;
+const float kPlotX0 = 86.0f, kPlotX1 = 850.0f, kPlotY0 = 546.0f, kPlotY1 = 634.0f;
 static float kPlotDbMax = 6.0f;           // +12 dB i HEAD-läget (närmaste örat får mer diskant)
 const float kPlotDbMin = -24.0f;
 
@@ -811,7 +817,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.0.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -866,36 +872,32 @@ void paint(Editor* ed, HDC hdc, int width, int height)
             drawButton(g, ff, ed->btnFx[i], fxLabels[i], fxMode == i, i == kFxPan ? kCyan : kOrange, 13.0f);
     }
     drawText(g, L"DEPTH", ff, 16, FontStyleBold, kText, x0 + 16, kLabelY, 100, StringAlignmentNear);
-    if (fxMode == kFxLeslie) {
-        // Modellväljare: < MOD 122 >  (klick på vänster/höger halva)
-        const RectDef& sb = ed->shapeBox;
-        drawBox(g, sb.x, sb.y, sb.w, sb.h);
-        drawText(g, L"<", ff, 12, FontStyleBold, kTextDim, sb.x + 3.0f, sb.y + 4.0f, 12.0f, StringAlignmentCenter);
-        drawText(g, L">", ff, 12, FontStyleBold, kTextDim, sb.x + sb.w - 15.0f, sb.y + 4.0f, 12.0f, StringAlignmentCenter);
-        wchar_t mw[24];
-        wideFromNarrow(kLesModelLongNames[lesModelFromNorm(pv[kParamLesModel])], mw, 24);
-        drawText(g, mw, ff, 12, FontStyleBold, autoOn ? kOrange : kTextDim, sb.x + 14.0f, sb.y + 5.0f, sb.w - 28.0f, StringAlignmentCenter);
-    } else {
-        // Vågformsruta: klick = nästa form
-        // Vågformsruta: < ikon NAMN >  (klick på vänster/höger halva = föregående/nästa)
+    {
+        // Väljarrad under PAN/TREM/LESLIE: < vågform >  eller (LESLIE) < modell >
+        drawButton(g, ff, ed->shapePrev, L"<", false, kCyan);
+        drawButton(g, ff, ed->shapeNext, L">", false, kCyan);
         const RectDef& sb = ed->shapeBox;
         drawBox(g, sb.x, sb.y, sb.w, sb.h);
         const Color& sc = autoOn ? kOrange : kTextDim;
-        drawText(g, L"<", ff, 11, FontStyleBold, kTextDim, sb.x + 1.0f, sb.y + 5.0f, 10.0f, StringAlignmentCenter);
-        drawText(g, L">", ff, 11, FontStyleBold, kTextDim, sb.x + sb.w - 11.0f, sb.y + 5.0f, 10.0f, StringAlignmentCenter);
-        drawShapeIcon(g, shape, sb.x + 11.0f, sb.y + 6.0f, 20.0f, 14.0f, sc);
-        wchar_t sw[24];
-        wideFromNarrow(kShapeLongNames[shape], sw, 24);
-        // Långa namn (PARADIDDLE-DIDDLE) krymps så att de får plats
-        const float tx = sb.x + 33.0f, tw = sb.w - 45.0f;
-        float fsz = 10.0f;
-        for (; fsz > 7.5f; fsz -= 0.5f) {
-            Font f(&ff, fsz, FontStyleBold, UnitPixel);
-            RectF box;
-            g.MeasureString(sw, -1, &f, PointF(0.0f, 0.0f), &box);
-            if (box.Width <= tw + 4.0f) break;
+        if (fxMode == kFxLeslie) {
+            wchar_t mw[24];
+            wideFromNarrow(kLesModelLongNames[lesModelFromNorm(pv[kParamLesModel])], mw, 24);
+            drawText(g, mw, ff, 13, FontStyleBold, sc, sb.x, sb.y + 6.0f, sb.w, StringAlignmentCenter);
+        } else {
+            drawShapeIcon(g, shape, sb.x + 6.0f, sb.y + 8.0f, 22.0f, 14.0f, sc);
+            wchar_t sw[24];
+            wideFromNarrow(kShapeLongNames[shape], sw, 24);
+            // Långa namn (PARADIDDLE-DIDDLE) krymps så att de får plats
+            const float tx = sb.x + 30.0f, tw = sb.w - 34.0f;
+            float fsz = 12.0f;
+            for (; fsz > 7.5f; fsz -= 0.5f) {
+                Font f(&ff, fsz, FontStyleBold, UnitPixel);
+                RectF box;
+                g.MeasureString(sw, -1, &f, PointF(0.0f, 0.0f), &box);
+                if (box.Width <= tw + 2.0f) break;
+            }
+            drawText(g, sw, ff, fsz, FontStyleBold, sc, tx, sb.y + 7.0f + (12.0f - fsz) * 0.6f, tw, StringAlignmentCenter);
         }
-        drawText(g, sw, ff, fsz, FontStyleBold, sc, tx, sb.y + 6.0f + (10.0f - fsz) * 0.5f, tw, StringAlignmentCenter);
     }
     drawKnob(g, ed->knobs[3], pv[kParamDepth]);
     swprintf(txt, 64, L"%.0f %%", depth * 100.0);
@@ -925,9 +927,9 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         // Over 0 dB uppe till höger i rubrikraden
         const bool over = now < ed->overUntil;
         SolidBrush odot(over ? Color(255, 255, 70, 60) : Color(255, 50, 54, 58));
-        g.FillEllipse(&odot, x0 + 108.0f, kRow1Y + 16.0f, 10.0f, 10.0f);
+        g.FillEllipse(&odot, x0 + 122.0f, kRow1Y + 16.0f, 10.0f, 10.0f);
         drawText(g, L"Over 0 dB", ff, 12, over ? FontStyleBold : FontStyleRegular,
-                 over ? Color(255, 255, 90, 80) : kTextDim, x0 + 122, kRow1Y + 12.0f, 80, StringAlignmentNear);
+                 over ? Color(255, 255, 90, 80) : kTextDim, x0 + 136, kRow1Y + 12.0f, 70, StringAlignmentNear);
     }
     {
         // MONITOR: STEREO / MONO / MID / SIDES
@@ -1032,7 +1034,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
 
     // === PAN LAW-graf / HEAD-graf ===
     drawPanel(g, 20, kGraphY, 860, kGraphH);
-    drawText(g, headMode ? L"HEAD" : L"PAN LAW", ff, 16, FontStyleBold, kText, 38, kGraphY + 8, 140, StringAlignmentNear);
+    drawText(g, headMode ? L"HEAD" : L"PAN LAW", ff, 16, FontStyleBold, kText, 38, kGraphY + 9, 140, StringAlignmentNear);
     {
         // HEAD-knapp, huvudstorlek och tidsskillnaden just nu
         drawButton(g, ff, ed->btnHead, L"HEAD", headMode, kOrange, 13.0f);
@@ -1045,7 +1047,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         if (headMode) {
             const double itd = std::fabs(headItd(pos * 0.5 * kPi, headA)) * 1000.0;
             swprintf(txt, 64, L"ITD %.2f ms", itd);
-            drawText(g, txt, ff, 12, FontStyleBold, kOrange, 432, kGraphY + 12, 120, StringAlignmentNear);
+            drawText(g, txt, ff, 12, FontStyleBold, kOrange, 482, kGraphY + 17, 110, StringAlignmentNear);
         }
     }
     kPlotDbMax = headMode ? 12.0f : 6.0f;
@@ -1081,10 +1083,10 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         const double az = pos * 0.5 * kPi;
         g.FillEllipse(&ml, plotX(pos) - 5.0f, plotY(headEarGainDb(az, false, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
         g.FillEllipse(&mr, plotX(pos) - 5.0f, plotY(headEarGainDb(az, true, 4000.0, headA)) - 5.0f, 10.0f, 10.0f);
-        g.DrawLine(&ln, 600.0f, kGraphY + 20.0f, 624.0f, kGraphY + 20.0f);
-        drawText(g, L"LEFT EAR", ff, 12, FontStyleRegular, kText, 628, kGraphY + 12, 80, StringAlignmentNear);
-        g.DrawLine(&lr, 722.0f, kGraphY + 20.0f, 746.0f, kGraphY + 20.0f);
-        drawText(g, L"RIGHT EAR", ff, 12, FontStyleRegular, kText, 750, kGraphY + 12, 100, StringAlignmentNear);
+        g.DrawLine(&ln, 640.0f, kGraphY + 18.0f, 664.0f, kGraphY + 18.0f);
+        drawText(g, L"LEFT EAR", ff, 12, FontStyleRegular, kText, 668, kGraphY + 10, 80, StringAlignmentNear);
+        g.DrawLine(&lr, 746.0f, kGraphY + 18.0f, 770.0f, kGraphY + 18.0f);
+        drawText(g, L"RIGHT EAR", ff, 12, FontStyleRegular, kText, 774, kGraphY + 10, 90, StringAlignmentNear);
         drawText(g, L"Spherical head model: Woodworth ITD, Brown & Duda head shadow  \u00B7  solid = 4 kHz  \u00B7  dashed = 500 Hz  \u00B7  center is unchanged",
                  ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
     } else {
@@ -1096,12 +1098,12 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         SolidBrush ml(kCyan), mr(kOrange);
         g.FillEllipse(&ml, plotX(pos) - 5.0f, plotY(gainToDb(gl)) - 5.0f, 10.0f, 10.0f);
         g.FillEllipse(&mr, plotX(pos) - 5.0f, plotY(gainToDb(gr)) - 5.0f, 10.0f, 10.0f);
-        g.DrawLine(&ln, 560.0f, kGraphY + 20.0f, 584.0f, kGraphY + 20.0f);
-        drawText(g, L"LEFT", ff, 12, FontStyleRegular, kText, 588, kGraphY + 12, 60, StringAlignmentNear);
-        g.DrawLine(&lr, 636.0f, kGraphY + 20.0f, 660.0f, kGraphY + 20.0f);
-        drawText(g, L"RIGHT", ff, 12, FontStyleRegular, kText, 664, kGraphY + 12, 60, StringAlignmentNear);
-        g.DrawLine(&lt, 718.0f, kGraphY + 20.0f, 742.0f, kGraphY + 20.0f);
-        drawText(g, L"LOUDNESS", ff, 12, FontStyleRegular, kText, 746, kGraphY + 12, 100, StringAlignmentNear);
+        g.DrawLine(&ln, 607.0f, kGraphY + 18.0f, 631.0f, kGraphY + 18.0f);
+        drawText(g, L"LEFT", ff, 12, FontStyleRegular, kText, 635, kGraphY + 10, 60, StringAlignmentNear);
+        g.DrawLine(&lr, 679.0f, kGraphY + 18.0f, 703.0f, kGraphY + 18.0f);
+        drawText(g, L"RIGHT", ff, 12, FontStyleRegular, kText, 707, kGraphY + 10, 60, StringAlignmentNear);
+        g.DrawLine(&lt, 761.0f, kGraphY + 18.0f, 785.0f, kGraphY + 18.0f);
+        drawText(g, L"LOUDNESS", ff, 12, FontStyleRegular, kText, 789, kGraphY + 10, 90, StringAlignmentNear);
         drawText(g, L"Center is always 0 dB  \u00B7  LOW MONO bass stays in the center  \u00B7  dashed = total loudness of a mono source",
                  ff, 11, FontStyleRegular, kTextDim, 20, kGraphY + kGraphH - 22.0f, 860, StringAlignmentCenter);
     }
@@ -1309,14 +1311,10 @@ bool handleButtons(Editor* ed, int x, int y)
     if (ed->monNext.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, +1, true); return true; }
     for (int i = 0; i < kNumFxModes; ++i)
         if (ed->btnFx[i].hit(x, y)) { setParamOnce(ed, kParamFxMode, choiceNorm(i, kNumFxModes)); return true; }
-    if (ed->leslieMode() && ed->shapeBox.hit(x, y)) {
-        const bool next = x >= ed->shapeBox.x + ed->shapeBox.w * 0.5f;
-        stepChoice(ed, kParamLesModel, kNumLesModels, next ? +1 : -1, true);
-        return true;
-    }
-    if (!ed->leslieMode() && ed->shapeBox.hit(x, y)) {
-        const bool next = x >= ed->shapeBox.x + ed->shapeBox.w * 0.5f;
-        stepChoice(ed, kParamShape, kNumShapes, next ? +1 : -1, true);
+    if (ed->shapePrev.hit(x, y) || ed->shapeNext.hit(x, y) || ed->shapeBox.hit(x, y)) {
+        const int step = ed->shapePrev.hit(x, y) ? -1 : +1;          // rutan själv = nästa
+        if (ed->leslieMode()) stepChoice(ed, kParamLesModel, kNumLesModels, step, true);
+        else stepChoice(ed, kParamShape, kNumShapes, step, true);
         return true;
     }
     if (ed->btnHead.hit(x, y)) {
