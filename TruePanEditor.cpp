@@ -100,6 +100,8 @@ struct Editor
     float dragStartValue = 0.0f;
 
     // Väljare med pilar: samma storlek som PRESET (ruta mellan pilarna)
+    RectDef panDown    = { colX(0) + 14.0f,  kBigValueY, 30.0f, 30.0f };   // PAN-steg
+    RectDef panUp      = { colX(0) + 162.0f, kBigValueY, 30.0f, 30.0f };
     RectDef lawDown    = { colX(0) + 14.0f,  kSelY, 30.0f, 30.0f };
     RectDef lawUp      = { colX(0) + 162.0f, kSelY, 30.0f, 30.0f };
     RectDef monPrev    = { colX(3) + 14.0f,  kSelY, 30.0f, 30.0f };
@@ -458,7 +460,7 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.6", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"TruePan v2.6.1", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
     drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2 / VST3  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
     {
@@ -566,7 +568,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.6", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.6.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -588,7 +590,14 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawKnob(g, ed->knobs[0], pv[kParamPan], false, true);
     panText(pan, nb, sizeof nb, true);
     wideFromNarrow(nb, txt, 64);
-    drawText(g, txt, ff, 22, FontStyleBold, kCyan, ed->knobs[0].cx - 70.0f, kBigValueY, 140.0f, StringAlignmentCenter);
+    // PAN-värdet i en pil-box: pilarna hoppar mellan stegen 50L ... C ... 50R
+    drawButton(g, ff, ed->panDown, L"<", false, kCyan);
+    drawButton(g, ff, ed->panUp, L">", false, kCyan);
+    {
+        const float bx = ed->panDown.x + ed->panDown.w + 4.0f, bw = ed->panUp.x - bx - 4.0f;
+        drawBox(g, bx, ed->panDown.y, bw, ed->panDown.h);
+        drawText(g, txt, ff, 20, FontStyleBold, kCyan, bx, ed->panDown.y + 1.0f, bw, StringAlignmentCenter);
+    }
     drawButton(g, ff, ed->lawDown, L"<", false, kCyan);
     drawButton(g, ff, ed->lawUp, L">", false, kCyan);
     {
@@ -1092,6 +1101,8 @@ bool handleButtons(Editor* ed, int x, int y)
     Core* p = ed->plugin;
     if (ed->btnBalance.hit(x, y)) { setParamOnce(ed, kParamMode, 0.0f); return true; }
     if (ed->btnStereo.hit(x, y))  { setParamOnce(ed, kParamMode, 1.0f); return true; }
+    if (ed->panDown.hit(x, y))    { setParamOnce(ed, kParamPan, panNextStep(ed->plugin->params[kParamPan].load(), -1)); return true; }
+    if (ed->panUp.hit(x, y))      { setParamOnce(ed, kParamPan, panNextStep(ed->plugin->params[kParamPan].load(), +1)); return true; }
     if (ed->lawDown.hit(x, y))    { stepChoice(ed, kParamLaw, kNumLaws, -1, false); return true; }
     if (ed->lawUp.hit(x, y))      { stepChoice(ed, kParamLaw, kNumLaws, +1, false); return true; }
     if (ed->monPrev.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, -1, true); return true; }

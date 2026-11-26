@@ -1,5 +1,9 @@
 # Ändringslogg
 
+## v2.6.1 – PAN-värdet i en pil-box (2026-11-26)
+- Under PAN-ratten visas värdet i en ruta med pilar (som LAW). Pilarna hoppar mellan stegen
+  50L, 36L, 22L, 10L, C, 10R, 22R, 36R, 50R.
+
 ## v2.6 – PAN-steg och DIDDLETIE (2026-11-26)
 - PARAVARIANT heter nu DIDDLETIE (samma ljud; gamla projekt laddas som förut).
 - PAN-steg: 50L, 36L, 22L, 10L, C, 10R, 22R, 36R, 50R. Piltangenterna vänster/höger flyttar PAN

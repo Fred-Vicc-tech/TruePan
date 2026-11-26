@@ -25,7 +25,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2600;           // TruePan 2.6
+const VstInt32 kVersion = 2610;           // TruePan 2.6.1
 
 struct Plugin : Core
 {
