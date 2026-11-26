@@ -1,5 +1,9 @@
 # Ändringslogg
 
+## v1.4.2 – Mätarskala från -30 dB (2026-11-26)
+- Nivåmätarna börjar vid -30 dB (skala -30, -24, -18, -12, -6, -3, 0 dB; topp +6 dB).
+- Modellnamnet (t.ex. VIBRATONE) 1 px längre ner, centrerat i rutan.
+
 ## v1.4.1 – Fönsterjusteringar (2026-11-26)
 - SPEED visar STOP, CHORALE och TREMOLO i samma stil som 1/4 osv.
 - Modell-/vågformsrutan bredvid DEPTH är bredare, så att VIBRATONE får plats.

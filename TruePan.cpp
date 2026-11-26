@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1410;           // TruePan 1.4.1
+const VstInt32 kVersion = 1420;           // TruePan 1.4.2
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -710,11 +710,12 @@ void drawLawCurve(Graphics& g, int law, CurveKind kind, const Color& color, floa
     g.DrawLines(&pen, pts, n);
 }
 
-// Nivå 0..1 -> stapelns längd (-48 .. +6 dBFS)
+// Nivå 0..1 -> stapelns längd (-30 .. +6 dBFS)
+const double kMeterMinDb = -30.0, kMeterMaxDb = 6.0;
 float meterFrac(float peak)
 {
     const double db = gainToDb(peak);
-    const double t = (db + 48.0) / 54.0;
+    const double t = (db - kMeterMinDb) / (kMeterMaxDb - kMeterMinDb);
     return (float)clampd(t, 0.0, 1.0);
 }
 
@@ -769,7 +770,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.4.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.4.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -831,7 +832,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         drawText(g, L">", ff, 12, FontStyleBold, kTextDim, sb.x + sb.w - 15.0f, sb.y + 4.0f, 12.0f, StringAlignmentCenter);
         wchar_t mw[24];
         wideFromNarrow(kLesModelLongNames[lesModelFromNorm(pv[kParamLesModel])], mw, 24);
-        drawText(g, mw, ff, 12, FontStyleBold, autoOn ? kOrange : kTextDim, sb.x + 14.0f, sb.y + 4.0f, sb.w - 28.0f, StringAlignmentCenter);
+        drawText(g, mw, ff, 12, FontStyleBold, autoOn ? kOrange : kTextDim, sb.x + 14.0f, sb.y + 5.0f, sb.w - 28.0f, StringAlignmentCenter);
     } else {
         // Vågformsruta: klick = nästa form
         const RectDef& sb = ed->shapeBox;
@@ -923,21 +924,21 @@ void paint(Editor* ed, HDC hdc, int width, int height)
             SolidBrush back(Color(255, 30, 33, 37));
             g.FillRectangle(&back, fx0, my[i], fx1 - fx0, 9.0f);
             const float w = meterFrac(lv[i]) * (fx1 - fx0);
-            const float zero = (48.0f / 54.0f) * (fx1 - fx0);   // 0 dBFS
+            const float zero = meterFrac(1.0f) * (fx1 - fx0);   // 0 dBFS
             SolidBrush barB(kCyan), hotB(Color(255, 255, 70, 60));
             g.FillRectangle(&barB, fx0, my[i], w < zero ? w : zero, 9.0f);
             if (w > zero) g.FillRectangle(&hotB, fx0 + zero, my[i], w - zero, 9.0f);
             // Skalstreck i staplarna
-            const int marks[7] = { -36, -24, -18, -12, -6, -3, 0 };
+            const int marks[7] = { -30, -24, -18, -12, -6, -3, 0 };
             for (int k = 0; k < 7; ++k) {
                 const float mx = fx0 + meterFrac((float)dbToGain(marks[k])) * (fx1 - fx0);
                 Pen mp(marks[k] == 0 ? kTextDim : Color(255, 70, 74, 80), 1.0f);
                 g.DrawLine(&mp, mx, my[i] - 2.0f, mx, my[i] + 11.0f);
             }
         }
-        // Skala under mätarna: -36, -24, -18, -12, -6, -3, 0 dB
+        // Skala under mätarna: -30, -24, -18, -12, -6, -3, 0 dB (mätaren börjar vid -30 dB)
         {
-            const int marks[7] = { -36, -24, -18, -12, -6, -3, 0 };
+            const int marks[7] = { -30, -24, -18, -12, -6, -3, 0 };
             for (int k = 0; k < 7; ++k) {
                 const float mx = fx0 + meterFrac((float)dbToGain(marks[k])) * (fx1 - fx0);
                 wchar_t ml[16];
