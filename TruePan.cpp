@@ -42,7 +42,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2410;           // TruePan 2.4.1
+const VstInt32 kVersion = 2420;           // TruePan 2.4.2
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -524,6 +524,8 @@ struct Editor
     int dragThumbY = 0;
     float dragScroll0 = 0.0f;
     RectDef btnBack = { 760.0f, 114.0f, 100.0f, 34.0f };
+    HWND prevFocus = nullptr;          // fönstret som hade fokus innan musen kom in
+    bool tracking = false;
     bool overLogo(int x, int y) const { return x >= 15 && x <= logoRight && y >= 4 && y <= 52; }
 
     bool leslieMode() const { return fxModeFromNorm(plugin->params[kParamFxMode].load()) == kFxLeslie; }
@@ -824,11 +826,31 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.4.1", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"TruePan v2.4.2", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
     drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
-    drawText(g, L"Fredrik Frigren  |  2F Productions \u00A9 2026  |  info@2f.se", ff, 15, FontStyleBold, kCyan,
-             38.0f, 145.0f, 600.0f, StringAlignmentNear);
+    {
+        // Fredrik Frigren | Copyright (c) 2F Productions 2026 | info@2f.se
+        // Copyright-tecknet ritas själv (ring + C) så att det blir tydligt i alla storlekar.
+        Font f(&ff, 15, FontStyleBold, UnitPixel);
+        StringFormat typo(StringFormat::GenericTypographic());
+        typo.SetFormatFlags(typo.GetFormatFlags() | StringFormatFlagsMeasureTrailingSpaces);
+        SolidBrush cy(kCyan);
+        const wchar_t* partA = L"Fredrik Frigren  |  Copyright ";
+        const wchar_t* partB = L" 2F Productions 2026  |  info@2f.se";
+        RectF boxA;
+        g.MeasureString(partA, -1, &f, PointF(0.0f, 0.0f), &typo, &boxA);
+        float x = 40.0f;
+        const float y = 148.0f;
+        g.DrawString(partA, -1, &f, PointF(x, y), &typo, &cy);
+        x += boxA.Width;
+        const float d = 15.0f, cyc = y + 9.5f;           // ringens diameter och mitt (textens mitt)
+        Pen ring(kCyan, 1.6f);
+        g.DrawEllipse(&ring, x + 1.0f, cyc - d * 0.5f, d, d);
+        drawText(g, L"C", ff, 10, FontStyleBold, kCyan, x + 1.0f, cyc - 7.5f, d, StringAlignmentCenter);
+        x += d + 2.0f;
+        g.DrawString(partB, -1, &f, PointF(x, y), &typo, &cy);
+    }
     drawButton(g, ff, ed->btnBack, L"BACK", false, kCyan);
 
     // Manual
@@ -912,7 +934,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.4.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.4.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -1539,7 +1561,26 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetCapture(hwnd);
         return 0;
     }
+    case WM_MOUSELEAVE:
+        // Musen lämnade fönstret: ge tillbaka tangentbordsfokus till Live
+        if (ed) {
+            ed->tracking = false;
+            if (GetFocus() == hwnd && ed->prevFocus && IsWindow(ed->prevFocus)) SetFocus(ed->prevFocus);
+            ed->prevFocus = nullptr;
+        }
+        return 0;
     case WM_MOUSEMOVE:
+        // Windows 7 skickar mushjulet till fönstret som har fokus: ta fokus medan musen
+        // är över TruePan, så att hjulet fungerar (manualen och rattarna)
+        if (ed && !ed->tracking) {
+            HWND f = GetFocus();
+            if (f != hwnd) { ed->prevFocus = f; SetFocus(hwnd); }
+            TRACKMOUSEEVENT tme = {};
+            tme.cbSize = sizeof tme;
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            if (TrackMouseEvent(&tme)) ed->tracking = true;
+        }
         if (ed && ed->dragThumb) {
             const float viewH = kManBottom - kManTop, maxScroll = manualMaxScroll(ed);
             const float th = std::max(30.0f, viewH * viewH / std::max(ed->contentH, 1.0f));

@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v2.4.2 – Mushjulet fungerar, tydligare copyright (2026-11-26)
+- Windows 7 skickar mushjulet till fönstret som har tangentbordsfokus, inte till fönstret under musen.
+  TruePan tar nu fokus medan musen är över fönstret och lämnar tillbaka det till Live när musen går
+  därifrån. Mushjulet rullar manualen (och fungerar på rattarna).
+- Baksidan: "Fredrik Frigren | Copyright © 2F Productions 2026 | info@2f.se" med ett egenritat, tydligare
+  copyright-tecken (ring + C).
+
 ## v2.4.1 – Baksidan finjusterad (2026-11-26)
 - Ingen i-symbol: man klickar direkt på loggan.
 - "Psychoacoustic Stereo Panner" (fram- och baksida) och manualens kursiva källtexter i samma ljusa ton som versionsnumret.
