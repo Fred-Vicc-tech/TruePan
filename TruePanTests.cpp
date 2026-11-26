@@ -534,6 +534,31 @@ int main()
             for (int k = 0; k < 1500; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }
             check(x.leslieHornHz() == 0.0 && x.leslieDrumHz() == 0.0, "STOP: horn och trumma stannar helt");
         }
+        // Riktverkan: diskanten svajar mycket mer än mellanregistret (dovt bakåt)
+        {
+            auto swingDb = [&](double hz) {
+                Leslie les; les.prepare(kSr); les.setRoom(0.0); les.setTargets(400.0 / 60.0, 342.0 / 60.0);
+                const int n2 = 48000 * 2, win = 240;
+                std::vector<double> out(n2);
+                for (int i = 0; i < n2; ++i) {
+                    double a, b;
+                    les.advance();
+                    les.process(0.5 * std::sin(2.0 * kPi * hz * i / kSr), a, b);
+                    out[i] = a;
+                }
+                double mx = 0.0, mn = 1e9;
+                for (int i = n2 / 2; i + win <= n2; i += win) {
+                    double e = 0.0;
+                    for (int k = 0; k < win; ++k) e += out[i + k] * out[i + k];
+                    e = std::sqrt(e / win);
+                    mx = std::fmax(mx, e); mn = std::fmin(mn, e);
+                }
+                return 20.0 * std::log10(mx / std::fmax(mn, 1e-9));
+            };
+            const double s12 = swingDb(1200.0), s8 = swingDb(8000.0);
+            std::printf("      (nivasving 1,2 kHz %.1f dB, 8 kHz %.1f dB)\n", s12, s8);
+            check(s8 > s12 + 6.0, "LESLIE riktverkan: diskanten (8 kHz) forsvinner mer an mellanregistret nar hornet pekar bort");
+        }
         // Alla modeller: rörelse i stereo och rimlig nivå
         {
             bool ok = true;

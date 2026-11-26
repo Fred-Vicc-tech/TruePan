@@ -323,11 +323,27 @@ struct LR4
 // Två mikrofoner står på var sin sida (vänster och höger): när rotorn pekar
 // mot vänster hörs den starkt och nära där, medan höger mest hör reflexen från
 // rummets vägg. Ljudet snurrar alltså runt i stereobilden, med dopplereffekt.
+//
+// Riktverkan (psykoakustik): hornet strålar diskanten som en ficklampa. När det
+// pekar bort från en mikrofon försvinner de höga frekvenserna mer än de låga, så
+// ljudet blir dovt, inte bara svagare. Brytfrekvensen följer riktningen på en
+// logaritmisk skala (som örat uppfattar tonhöjd) och stannar högt en bit åt
+// sidan, för att sedan falla mot baksidan. Eftersom diskantförlusten i sig sänker
+// den upplevda styrkan (örat är känsligast vid 2-5 kHz) är nivåsvajet minskat
+// något, så att den totala upplevda styrkevariationen blir som förut.
 // ---------------------------------------------------------------------------
 class Leslie
 {
 public:
     static const int kBufSize = 16384;   // räcker till 768 kHz (högst ca 14 ms fördröjning)
+
+    // Riktverkan per rotortyp: brytfrekvens rakt mot mikrofonen, rakt åt
+    // sidan och rakt bort (Hz), samt nivåkompensation för filtret.
+    struct Directivity { double front, side, back, makeup; };
+    struct Tone { double z1 = 0.0, z2 = 0.0; };   // tvåpoligt lågpass
+    static Directivity dirHorn() { return { 16000.0, 7000.0, 2200.0, 1.08 }; }   // tydlig ficklampa
+    static Directivity dirDrum() { return { 4000.0, 1500.0, 450.0, 1.03 }; }     // bastrumma: mild
+    static Directivity dirVib()  { return { 12000.0, 6000.0, 2800.0, 1.06 }; }   // frigolitrotorn sprider mer
 
     Leslie() : horn_(kBufSize, 0.0), drum_(kBufSize, 0.0) {}
 
@@ -346,6 +362,7 @@ public:
         std::fill(horn_.begin(), horn_.end(), 0.0);
         std::fill(drum_.begin(), drum_.end(), 0.0);
         reflZ_[0] = reflZ_[1] = 0.0;
+        for (int i = 0; i < 2; ++i) { hornTone_[i] = Tone(); drumTone_[i] = Tone(); }
         w_ = 0;
     }
     void setModel(int m)
@@ -383,8 +400,8 @@ public:
             // En rotor (frigolittrumma framför en 10-tumshögtalare), gitarrområdet
             drum_[w_] = vibLp_.process(vibHp_.process(in));
             horn_[w_] = 0.0;
-            const double l = rotor(drum_, drumAng_ - micL, 0.0004, 0.75);
-            const double r = rotor(drum_, drumAng_ - micR, 0.0004, 0.75);
+            const double l = rotor(drum_, drumAng_ - micL, 0.0004, 0.65, dirVib(), drumTone_[0]);
+            const double r = rotor(drum_, drumAng_ - micR, 0.0004, 0.65, dirVib(), drumTone_[1]);
             const double rl = wallOne(drum_, drumAng_ - micL, 0.0061);
             const double rr = wallOne(drum_, drumAng_ - micR, 0.0089);
             reflZ_[0] += (rl - reflZ_[0]) * reflLp_;
@@ -395,8 +412,10 @@ public:
             horn_[w_] = hpHorn_.process(in);
             drum_[w_] = lpDrum_.process(in);
             const bool small = model_ == kModel145;
-            const double l = rotor(horn_, hornAng_ - micL, 0.0005, 0.85) + rotor(drum_, drumAng_ - micL, 0.0002, small ? 0.45 : 0.5);
-            const double r = rotor(horn_, hornAng_ - micR, 0.0005, 0.85) + rotor(drum_, drumAng_ - micR, 0.0002, small ? 0.45 : 0.5);
+            const double l = rotor(horn_, hornAng_ - micL, 0.0005, 0.7, dirHorn(), hornTone_[0])
+                           + rotor(drum_, drumAng_ - micL, 0.0002, small ? 0.4 : 0.45, dirDrum(), drumTone_[0]);
+            const double r = rotor(horn_, hornAng_ - micR, 0.0005, 0.7, dirHorn(), hornTone_[1])
+                           + rotor(drum_, drumAng_ - micR, 0.0002, small ? 0.4 : 0.45, dirDrum(), drumTone_[1]);
             // Rummet: när rotorn pekar bort från en mikrofon hörs ljudet via väggen
             // bakom. 145 är mindre och står oftast närmare väggen: kortare, svagare reflex.
             const double rl = wall(hornAng_ - micL, drumAng_ - micL, small ? 0.0049 : 0.0073);
@@ -419,18 +438,33 @@ private:
     // Nivå: Leslien ger brett, okorrelerat ljud som upplevs svagare än samma
     // effekt i mitten. Därför ligger den ca 1,5 dB över torrt ljud i effekt,
     // så att den upplevs lika stark som PAN-läget.
-    static constexpr double kNorm = 1.05;
+    static constexpr double kNorm = 1.12;   // inkl. kompensation för att riktverkan tar bort diskant
     static constexpr double kNormVib = 1.12;
 
     double coef(double rampSec) const { return 1.0 - std::exp(-3.0 / (rampSec * sr_)); }
 
-    // Rotorn sedd från en mikrofon: avståndet ändras (fördröjning = doppler)
-    // och nivån är högst när rotorn pekar mot mikrofonen.
-    double rotor(const std::vector<double>& buf, double ang, double depthSec, double amDepth) const
+    // Brytfrekvensen följer riktningen på log-skala: c = 1 (mot), 0 (sidan), -1 (bort)
+    static double toneHz(const Directivity& d, double c)
+    {
+        const double lf = std::log(d.front), ls = std::log(d.side), lb = std::log(d.back);
+        const double l = c >= 0.0 ? ls + (lf - ls) * c : ls + (ls - lb) * c;
+        return std::exp(l);
+    }
+
+    // Rotorn sedd från en mikrofon: avståndet ändras (fördröjning = doppler),
+    // nivån är högst och klangen ljusast när rotorn pekar mot mikrofonen.
+    double rotor(const std::vector<double>& buf, double ang, double depthSec, double amDepth,
+                 const Directivity& dir, Tone& tone)
     {
         const double c = std::cos(ang);
         const double delay = (0.0012 + depthSec * (1.0 - c)) * sr_;
-        return read(buf, delay) * (1.0 + amDepth * c);
+        double x = read(buf, delay) * (1.0 + amDepth * c);
+        // Tvåpoligt lågpass (12 dB/oktav), koefficient från brytfrekvensen
+        const double wc = 2.0 * kPi * clampd(toneHz(dir, c), 20.0, sr_ * 0.45) / sr_;
+        const double a = wc / (1.0 + wc);
+        tone.z1 += (x - tone.z1) * a;
+        tone.z2 += (tone.z1 - tone.z2) * a;
+        return tone.z2 * dir.makeup;
     }
     // Reflexen: starkast när rotorn pekar bort från mikrofonen (mot väggen)
     double wall(double hornAng, double drumAng, double extraSec) const
@@ -466,6 +500,7 @@ private:
     double reflLp_ = 0.5, reflZ_[2] = { 0.0, 0.0 }, room_ = 1.0;
     int w_ = 0, model_ = kModel122;
     double hornUpC_ = 0.0, hornDnC_ = 0.0, drumUpC_ = 0.0, drumDnC_ = 0.0;
+    Tone hornTone_[2], drumTone_[2];   // riktverkan per rotor och mikrofon (0 = vänster, 1 = höger)
     double hornT_ = 48.0 / 60.0, drumT_ = 40.0 / 60.0;
     double hornHz_ = 48.0 / 60.0, drumHz_ = 40.0 / 60.0, hornAng_ = 0.0, drumAng_ = 1.0;
 };

@@ -1,5 +1,13 @@
 # Ändringslogg
 
+## v1.5 – Leslie: riktverkan (dovare bakåt) (2026-11-26)
+- Hornet strålar diskanten som en ficklampa: brytfrekvensen följer riktningen på log-skala,
+  ca 16 kHz rakt mot mikrofonen, 7 kHz åt sidan och 2,2 kHz rakt bort (12 dB/oktav).
+  Bastrumman har en mild variant (4 kHz / 1,5 kHz / 450 Hz), VIBRATONE en mellanvariant.
+- Nivåsvajet minskat något (horn 0,85 -> 0,7), eftersom diskantförlusten i sig sänker upplevd styrka;
+  total nivå kompenserad så att Leslien fortfarande upplevs lika stark som PAN.
+- Nytt test: diskanten (8 kHz) svajar minst 6 dB mer än mellanregistret (1,2 kHz).
+
 ## v1.4.2 – Mätarskala från -30 dB (2026-11-26)
 - Nivåmätarna börjar vid -30 dB (skala -30, -24, -18, -12, -6, -3, 0 dB; topp +6 dB).
 - Modellnamnet (t.ex. VIBRATONE) 1 px längre ner, centrerat i rutan.
