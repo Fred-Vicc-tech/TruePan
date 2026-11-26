@@ -1,5 +1,10 @@
 # Ändringslogg
 
+## v2.4.3 – WIDTH fungerar även med LESLIE (2026-11-26)
+- WIDTH låg före Leslien, som blandar ihop kanalerna till mono, så WIDTH gjorde ingenting i LESLIE-läget
+  med DEPTH 100 %. Nu ligger Leslien före WIDTH: 0 % = mono Leslie, 200 % = dubbelt så bred.
+- Obs: på monoljud (samma ljud i båda kanalerna) finns ingen stereoinformation för WIDTH att bredda.
+
 ## v2.4.2 – Mushjulet fungerar, tydligare copyright (2026-11-26)
 - Windows 7 skickar mushjulet till fönstret som har tangentbordsfokus, inte till fönstret under musen.
   TruePan tar nu fokus medan musen är över fönstret och lämnar tillbaka det till Live när musen går

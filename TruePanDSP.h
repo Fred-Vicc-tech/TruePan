@@ -1151,24 +1151,25 @@ public:
                 bass = lowM * low_;
             }
 
+            // LESLIE (DEPTH = andel effekt). Rotorerna snurrar alltid.
+            // Körs alltid (fördröjningen hålls fylld), så att av/på inte klickar.
+            // Före WIDTH, så att WIDTH även styr hur brett Leslien låter.
+            leslie_.advance();
+            {
+                double ll, lr;
+                leslie_.process((xl + xr) * 0.5, ll, lr);
+                if (les_ > 0.0) {
+                    xl += (ll - xl) * les_;
+                    xr += (lr - xr) * les_;
+                }
+            }
+
             // WIDTH och MODE (mid/side)
             double yl = xl, yr = xr;
             if (side_ != 1.0) {
                 const double m = (xl + xr) * 0.5, s = (xl - xr) * 0.5 * side_;
                 yl = m + s;
                 yr = m - s;
-            }
-
-            // LESLIE (DEPTH = andel effekt). Rotorerna snurrar alltid.
-            // Körs alltid (fördröjningen hålls fylld), så att av/på inte klickar.
-            leslie_.advance();
-            {
-                double ll, lr;
-                leslie_.process((yl + yr) * 0.5, ll, lr);
-                if (les_ > 0.0) {
-                    yl += (ll - yl) * les_;
-                    yr += (lr - yr) * les_;
-                }
             }
 
             // Panorering: PAN LAW eller HEAD (huvudmodellen ersätter nivåpanoreringen).

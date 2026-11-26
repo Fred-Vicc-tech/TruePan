@@ -42,7 +42,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2420;           // TruePan 2.4.2
+const VstInt32 kVersion = 2430;           // TruePan 2.4.3
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -826,7 +826,7 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.4.2", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"TruePan v2.4.3", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
     drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
     {
@@ -934,7 +934,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.4.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.4.3", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 

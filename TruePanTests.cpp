@@ -667,6 +667,20 @@ int main()
             for (int k = 0; k < 1500; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }
             check(x.leslieHornHz() == 0.0 && x.leslieDrumHz() == 0.0, "STOP: horn och trumma stannar helt");
         }
+        // WIDTH styr även Leslien: 0 % = mono, 200 % = bredare
+        {
+            auto sideRms = [&](float w) {
+                Params q; q.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); q.v[kParamDepth] = 1.0f;
+                q.v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds); q.v[kParamWidth] = widthNorm(w);
+                std::vector<float> s2 = sine(1500.0, 48000 * 3), a2, b2, sd(48000 * 3);
+                Engine x; x.prepare(kSr); run(x, q, s2, s2, a2, b2);
+                for (size_t i = 0; i < sd.size(); ++i) sd[i] = 0.5f * (a2[i] - b2[i]);
+                return rms(sd, 48000);
+            };
+            const double w0 = sideRms(0.0f), w1 = sideRms(1.0f), w2 = sideRms(2.0f);
+            std::printf("      (Leslie sidosignal: WIDTH 0 %% %.3f, 100 %% %.3f, 200 %% %.3f)\n", w0, w1, w2);
+            check(w0 < 1e-6 && w1 > 0.05 && std::fabs(w2 / w1 - 2.0) < 0.01, "WIDTH fungerar i LESLIE-laget (0 % mono, 200 % dubbelt sa brett)");
+        }
         // Riktverkan: diskanten svajar mycket mer än mellanregistret (dovt bakåt)
         {
             auto swingDb = [&](double hz) {
