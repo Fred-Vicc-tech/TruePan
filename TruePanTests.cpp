@@ -869,17 +869,29 @@ int main()
         std::printf("      (100 m: 8 kHz %.1f dB, ISO %.1f dB)\n", g8_100, -40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0);
         check(std::fabs(g8_100 - (-40.0 - isoAirAbsorptionDbPerM(8000.0) * 99.0)) < 1.6, "DISTANCE 100 m: -40 dB och ca -10 dB extra vid 8 kHz");
 
-        // 1 m = oförändrat (standard) = rattens mitt
-        check(std::fabs(distanceM(defaultParam(kParamDistance)) - 1.0) < 1e-6 && std::fabs(defaultParam(kParamDistance) - 0.5f) < 1e-6
+        // 1 m = oförändrat (standard) = klockan 9 på ratten
+        check(std::fabs(distanceM(defaultParam(kParamDistance)) - 1.0) < 1e-6 && std::fabs(defaultParam(kParamDistance) - 1.0f / 6.0f) < 1e-6
               && std::fabs(distanceM(0.0f) - 0.25) < 1e-9 && std::fabs(distanceM(1.0f) - 100.0) < 1e-9
-              && std::fabs(distanceM(0.25f) - 0.5) < 1e-6 && std::fabs(distanceM(0.75f) - 10.0) < 1e-6,
-              "DISTANCE: 1 m i mitten (klockan 12), 0,5 m vid kvart, 10 m vid tre kvart, 0,25-100 m");
+              && std::fabs(distanceM(1.0f / 12.0f) - 0.5) < 1e-6 && std::fabs(distanceM(1.0f / 6.0f + 5.0f / 12.0f) - 10.0) < 1e-5,
+              "DISTANCE: 1 m klockan 9, 0,25-1 m fore, 1-100 m efter (10 m mitt pa hogra delen)");
         bool rt = true;
         for (double m = 0.25; m <= 100.0; m *= 1.37) rt = rt && std::fabs(distanceM(distanceNorm(m)) / m - 1.0) < 1e-5;
         check(rt && std::fabs(distanceM(distanceNormFromV17(0.231378f)) - 1.0) < 1e-3
-              && std::fabs(distanceM(distanceNormFromV17(1.0f)) - 100.0) < 1e-3,
-              "DISTANCE: aldre projekt behaller sitt avstand i den nya skalan");
-
+              && std::fabs(distanceM(distanceNormFromV17(1.0f)) - 100.0) < 1e-3
+              && std::fabs(distanceM(distanceNormFromV22(0.75f)) - 10.0) < 1e-3 && std::fabs(distanceM(distanceNormFromV22(0.25f)) - 0.5) < 1e-4,
+              "DISTANCE: aldre projekt (v1.7-v2.2) behaller sitt avstand");
+        // OUTPUT-kompensation: höjningen närmare än 1 m (fönstret sänker OUTPUT lika mycket)
+        check(std::fabs(distanceNearBoostDb(distanceNorm(0.5)) - 6.0206) < 1e-3 && std::fabs(distanceNearBoostDb(distanceNorm(0.25)) - 12.0412) < 1e-3
+              && distanceNearBoostDb(distanceNorm(1.0)) == 0.0 && distanceNearBoostDb(distanceNorm(20.0)) == 0.0,
+              "narmare an 1 m: +6 dB per halverat avstand (OUTPUT sanks lika mycket i fonstret)");
+        {
+            // Hela motorn: 0,5 m med OUTPUT -6 dB = samma nivå som 1 m med OUTPUT 0 dB
+            Params a1; Params a2; a2.v[kParamDistance] = distanceNorm(0.5); a2.v[kParamOutput] = outputDbToNorm(-distanceNearBoostDb(a2.v[kParamDistance]));
+            std::vector<float> s1k = sine(1000.0, n, 0.25), x1, y1, x2, y2;
+            Engine ea; ea.prepare(kSr); run(ea, a1, s1k, s1k, x1, y1);
+            Engine eb; eb.prepare(kSr); run(eb, a2, s1k, s1k, x2, y2);
+            check(std::fabs(db(rms(x2, 8000) / rms(x1, 8000))) < 0.05, "DISTANCE 0,5 m + OUTPUT -6 dB: samma volym som 1 m");
+        }
         // Närfält med HEAD: nivåskillnad i basen växer nära huvudet
         auto lowIld = [&](double m) {
             Params q; q.v[kParamHead] = 1.0f; q.v[kParamPan] = 1.0f; q.v[kParamDistance] = distanceNorm(m);

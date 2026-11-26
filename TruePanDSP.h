@@ -199,20 +199,35 @@ inline bool headOn(float n) { return n >= 0.5f; }
 inline double headSizeCm(float n) { return kHeadMinCm + clampd(n, 0.0f, 1.0f) * (kHeadMaxCm - kHeadMinCm); }
 inline float headSizeNorm(double cm) { return (float)clampd((cm - kHeadMinCm) / (kHeadMaxCm - kHeadMinCm), 0.0, 1.0); }
 
-// DISTANCE: 0,25 - 100 m. 1 m = referens (oförändrat ljud) = rattens mitt (klockan 12).
-// Vänster halva: 0,25 - 1 m (närmare), höger halva: 1 - 100 m (längre bort), båda logaritmiska.
+// DISTANCE: 0,25 - 100 m. 1 m = referens (oförändrat ljud) = klockan 9 på ratten
+// (1/6 av vridningen). Före: 0,25 - 1 m (närmare), efter: 1 - 100 m, båda logaritmiska.
 const double kDistMin = 0.25, kDistMax = 100.0, kDistRef = 1.0;
+const float kDistRefNorm = 1.0f / 6.0f;   // klockan 9 (ratten går från ca 7.30 till 4.30)
 inline double distanceM(float n)
 {
-    const double x = clampd(n, 0.0f, 1.0f);
-    if (x < 0.5) return kDistRef * std::pow(kDistMin / kDistRef, (0.5 - x) * 2.0);
-    return kDistRef * std::pow(kDistMax / kDistRef, (x - 0.5) * 2.0);
+    const double x = clampd(n, 0.0f, 1.0f), z = kDistRefNorm;
+    if (x < z) return kDistRef * std::pow(kDistMin / kDistRef, (z - x) / z);
+    return kDistRef * std::pow(kDistMax / kDistRef, (x - z) / (1.0 - z));
 }
 inline float distanceNorm(double m)
 {
     m = clampd(m, kDistMin, kDistMax);
-    if (m < kDistRef) return (float)(0.5 - 0.5 * std::log(m / kDistRef) / std::log(kDistMin / kDistRef));
-    return (float)(0.5 + 0.5 * std::log(m / kDistRef) / std::log(kDistMax / kDistRef));
+    const double z = kDistRefNorm;
+    if (m < kDistRef) return (float)(z - z * std::log(m / kDistRef) / std::log(kDistMin / kDistRef));
+    return (float)(z + (1.0 - z) * std::log(m / kDistRef) / std::log(kDistMax / kDistRef));
+}
+// Nivåhöjningen (dB) när ljudet är närmare än 1 m (avståndslagen); 0 för 1 m och längre bort
+inline double distanceNearBoostDb(float n)
+{
+    const double m = distanceM(n);
+    return m < kDistRef ? 20.0 * std::log10(kDistRef / m) : 0.0;
+}
+// v2.2: 1 m i mitten av ratten
+inline float distanceNormFromV22(float old)
+{
+    const double x = clampd(old, 0.0f, 1.0f);
+    const double m = x < 0.5 ? std::pow(kDistMin, (0.5 - x) * 2.0) : std::pow(kDistMax, (x - 0.5) * 2.0);
+    return distanceNorm(m);
 }
 // v1.7 - v2.1.1: ratten var en enda log-skala 0,25 - 100 m (1 m = 0,23)
 inline float distanceNormFromV17(float old)
@@ -1027,7 +1042,9 @@ public:
             airSetFor_ = distSm_;
         }
         head_.setDistance(distSm_);
-        const double tdist = kDistRef / distSm_;      // avståndslagen 1/r
+        // Avståndslagen 1/r: nivån följer ratten lika snabbt som OUTPUT (5 ms), så att
+        // OUTPUT-kompensationen i fönstret håller volymen helt still
+        const double tdist = kDistRef / distance_;
 
         const double phaseInc = tempo_ / 60.0 / sr_ / kRateBeats[rate_];
         const double beatInc = tempo_ / 60.0 / sr_;
@@ -1286,7 +1303,8 @@ inline void cleanName(const char* in, char* out, size_t max)
 // ---------------------------------------------------------------------------
 // Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
 // ---------------------------------------------------------------------------
-static const char* const kPresetHeader = "TruePan preset 7";
+static const char* const kPresetHeader = "TruePan preset 8";
+static const char* const kPresetHeaderV22 = "TruePan preset 7";   // v2.2: DISTANCE med 1 m i mitten
 static const char* const kPresetHeaderV20 = "TruePan preset 6";   // v2.0 - v2.1.1: gammal DISTANCE-skala
 static const char* const kPresetHeaderV19 = "TruePan preset 5";   // v1.9: 5 vågformer
 static const char* const kPresetHeaderV18 = "TruePan preset 4";   // v1.8: 4 vågformer
@@ -1349,7 +1367,8 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
     const bool v18 = text.compare(0, std::strlen(kPresetHeaderV18), kPresetHeaderV18) == 0;
     const bool v19 = text.compare(0, std::strlen(kPresetHeaderV19), kPresetHeaderV19) == 0;
     const bool v20 = text.compare(0, std::strlen(kPresetHeaderV20), kPresetHeaderV20) == 0;
-    if (!v11 && !v12 && !v14 && !v18 && !v19 && !v20 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool v22 = text.compare(0, std::strlen(kPresetHeaderV22), kPresetHeaderV22) == 0;
+    if (!v11 && !v12 && !v14 && !v18 && !v19 && !v20 && !v22 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
     const bool oldDistance = v14 || v18 || v19 || v20;   // presets med Dist-rad i gammal skala
     const int oldShapeCount = (v11 || v12 || v14) ? kNumShapesV16 : (v18 ? kNumShapesV18 : (v19 ? kNumShapesV19 : 0));
     for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
@@ -1374,6 +1393,7 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
                 if (v12 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV12((float)d);
                 if (oldShapeCount && i == kParamShape) v[i] = shapeNormFromOld((float)d, oldShapeCount);
                 if (oldDistance && i == kParamDistance) v[i] = distanceNormFromV17((float)d);
+                if (v22 && i == kParamDistance) v[i] = distanceNormFromV22((float)d);
             }
         }
     }

@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v2.3 – DISTANCE: 1 m klockan 9, OUTPUT följer med (2026-11-26)
+- 1 m (standard) sitter klockan 9: före 0,25–1 m, efter 1–100 m (båda logaritmiska). Blå båge åt båda hållen.
+- När DISTANCE vrids närmare än 1 m i fönstret sänks OUTPUT lika mycket som avståndet höjer nivån
+  (6 dB per halverat avstånd), så att höjningen syns men volymen står still. Båda spelas in som automation
+  när man vrider ratten.
+- Projekt och presets från tidigare versioner behåller sitt avstånd.
+
 ## v2.2 – DISTANCE med 1 m i mitten (2026-11-26)
 - DISTANCE-ratten har 1 m (standard, oförändrat ljud) klockan 12. Vänster halva: 0,25–1 m (närmare,
   orange båge), höger halva: 1–100 m (längre bort, blå båge). Båda halvorna logaritmiska.
