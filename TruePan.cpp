@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1800;           // TruePan 1.8
+const VstInt32 kVersion = 1900;           // TruePan 1.9
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 7 (v1.8: PARADIDDLE, 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
+    uint32_t version;       // 8 (v1.9: PARADIDDLE + PARAVARIANT, 5 former; 7 = v1.8 med 4 former; 6 = v1.7 DISTANCE; 5 = v1.6; 4 = v1.4-1.5; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 7;
+        p->chunk.version = 8;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -305,7 +305,8 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
             std::memcpy(&v, data + kChunkHeader + i * sizeof(float), sizeof(float));
             if (version == 2 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV11(v);
             if (version == 3 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV12(v);
-            if (version < 7 && (int)i == kParamShape && v >= 0.0f && v <= 1.0f) v = shapeNormFromV16(v);   // 3 -> 4 former
+            if (version < 8 && (int)i == kParamShape && v >= 0.0f && v <= 1.0f)               // 3 / 4 -> 5 former
+                v = shapeNormFromOld(v, version < 7 ? kNumShapesV16 : kNumShapesV18);
             p->setParam((int)i, v); // ogiltiga värden ignoreras
         }
         return 1;
@@ -662,11 +663,11 @@ void drawBigValue(Graphics& g, const FontFamily& ff, const KnobDef& k, const wch
 // Liten bild av AUTO-PAN-vågformen (två perioder)
 void drawShapeIcon(Graphics& g, int shape, float x, float y, float w, float h, const Color& color)
 {
-    const int n = 97;
+    const int n = 161;   // tillräckligt för 8 skarpa slag
     PointF pts[n];
     for (int i = 0; i < n; ++i) {
-        // två perioder; PARADIDDLE visar hela mönstret (4 perioder = 8 slag)
-        const double span = shape == kShapeParadiddle ? kLfoCycle : 2.0;
+        // två perioder; PARADIDDLE/PARAVARIANT visar hela mönstret (8 slag)
+        const double span = shape == kShapeParadiddle ? 8.0 : (shape == kShapeParaVariant ? 4.0 : 2.0);
         double ph = (double)i / (n - 1) * span;
         if (i == n - 1) ph = span - 1e-6;
         const float v = (float)lfoValue(shape, ph);
@@ -793,7 +794,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.8", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.9", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 

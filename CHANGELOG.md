@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v1.9 – PARADIDDLE med separata slag, PARAVARIANT (2026-11-26)
+- PARADIDDLE: varje slag är en ren SQUARE-puls på en RATE-period: första halvan ute på sidan, andra halvan
+  tillbaka i mitten. R-R och L-L hörs som två separata slag. RATE 1/16 = sextondelsslag; hela mönstret
+  tar 8 RATE-perioder och följer Lives takt. I TREM: varje slag på, tyst mellan slagen.
+- v1.8:s PARADIDDLE finns kvar som PARAVARIANT (ljudet stannar på sidan, halv RATE-period per slag).
+- Presets: Paradiddle 1/16 och Paravariant 1/8. Projekt och presets från v1.8 öppnas med PARAVARIANT.
+
 ## v1.8 – PARADIDDLE (2026-11-26)
 - Ny form i AUTO-PAN: PARADIDDLE (R-L-R-R-L-R-L-L) med egen symbol. Varje slag är lika långt som ett
   steg i SQUARE (en halv RATE-period); hela mönstret tar 4 RATE-perioder och följer Lives takt
