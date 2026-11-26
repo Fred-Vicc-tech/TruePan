@@ -994,22 +994,34 @@ public:
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
-    // Med loop i Live (cycleOn) hoppar positionen tillbaka till loopens start
-    // på exakt rätt sampel, även mitt i ett block, så att mönstret börjar om rätt.
+    // Med loop i Live (cycleOn) kan positionen hoppa tillbaka till loopens start
+    // mitt i ett block. TruePan räknar fram två förslag (med och utan hopp) och
+    // litar på loopinformationen först när Live faktiskt har hoppat tillbaka vid
+    // loopens slut. Säger Live att loopen är på utan att hoppa (t.ex. i Session-
+    // vyn) följer TruePan i stället den löpande positionen. Inget av fallen hackar.
     void setTransport(bool tempoValid, double tempo, bool playing, bool ppqValid, double ppq,
                       bool cycleOn = false, double cycleStart = 0.0, double cycleEnd = 0.0)
     {
         if (tempoValid && tempo >= 20.0 && tempo <= 999.0) tempo_ = tempo;
         if (playing && ppqValid && std::isfinite(ppq)) {
-            beatPos_ = ppq;
-            loopOn_ = cycleOn && std::isfinite(cycleStart) && std::isfinite(cycleEnd) && cycleEnd - cycleStart > 1e-6
-                      && ppq < cycleEnd + 1e-9;
+            const bool cycleOk = cycleOn && std::isfinite(cycleStart) && std::isfinite(cycleEnd) && cycleEnd - cycleStart > 1e-6;
+            if (synced_ && crossedLoop_) {
+                // Förra blocket passerade loopens slut: vad gjorde Live?
+                const double tol = 1e-3 + 4.0 * tempo_ / 60.0 / sr_;
+                if (std::fabs(ppq - wrappedPos_) < tol) loopVerified_ = true;           // hoppade tillbaka
+                else if (std::fabs(ppq - straightPos_) < tol) loopVerified_ = false;    // spelade vidare
+            }
+            if (!cycleOk || cycleStart != loopStart_ || cycleEnd != loopEnd_) loopVerified_ = false;   // ny loop: verifiera igen
+            loopOn_ = cycleOk && ppq < cycleEnd + 1e-9;
             loopStart_ = cycleStart; loopEnd_ = cycleEnd;
+            beatPos_ = straightPos_ = wrappedPos_ = ppq;
+            crossedLoop_ = false;
             phase_ = phaseFromBeats(beatPos_);
             synced_ = true;
         } else {
             synced_ = false;
             loopOn_ = false;
+            crossedLoop_ = false;
         }
     }
     double phaseFromBeats(double beats) const
@@ -1087,8 +1099,10 @@ public:
             const double tles = fxMode_ == kFxLeslie ? depth_ : 0.0;
             if (synced_) {
                 // I takt med Live: räkna fram taktpositionen per sampel (loopen tas med)
-                beatPos_ += beatInc;
-                if (loopOn_ && beatPos_ >= loopEnd_) beatPos_ = loopStart_ + (beatPos_ - loopEnd_);
+                straightPos_ += beatInc;
+                wrappedPos_ += beatInc;
+                if (loopOn_ && wrappedPos_ >= loopEnd_) { wrappedPos_ = loopStart_ + (wrappedPos_ - loopEnd_); crossedLoop_ = true; }
+                beatPos_ = loopVerified_ ? wrappedPos_ : straightPos_;
                 phase_ = phaseFromBeats(beatPos_);
             } else {
                 phase_ += phaseInc;
@@ -1220,7 +1234,8 @@ private:
 
     // AUTO-PAN
     double tempo_ = 120.0, phase_ = 0.0, beatPos_ = 0.0, loopStart_ = 0.0, loopEnd_ = 0.0;
-    bool loopOn_ = false;
+    double straightPos_ = 0.0, wrappedPos_ = 0.0;
+    bool loopOn_ = false, loopVerified_ = false, crossedLoop_ = false;
     bool synced_ = false;
 
     // LOW MONO

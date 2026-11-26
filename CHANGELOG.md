@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v2.3.1 – Säkrare takt-synk vid loop (2026-11-26)
+- v2.0.1 litade alltid på Lives loopinformation. Om Live säger att loopen är på men spelar vidare (t.ex. i
+  Session-vyn, eller med loopområdet på ett annat ställe) hoppade mönstret fel vid loopens slut: ett hack.
+- Nu räknas två förslag fram (med och utan hopp) och loopinformationen används först när Live faktiskt
+  har hoppat tillbaka. Båda fallen testas: inget hack när loopen inte spelas, sampelexakt omstart vid
+  varje nytt varv när den spelas (första varvet följer Live som före v2.0.1).
+
 ## v2.3 – DISTANCE: 1 m klockan 9, OUTPUT följer med (2026-11-26)
 - 1 m (standard) sitter klockan 9: före 0,25–1 m, efter 1–100 m (båda logaritmiska). Blå båge åt båda hållen.
 - När DISTANCE vrids närmare än 1 m i fönstret sänks OUTPUT lika mycket som avståndet höjer nivån

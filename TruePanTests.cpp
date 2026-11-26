@@ -352,30 +352,41 @@ int main()
                   "aldre projekt behaller formen; v1.8:s PARADIDDLE blir PARAVARIANT");
         }
 
-        // Loop i Live: mönstret börjar om på exakt rätt sampel, även mitt i ett block
+        // Loop i Live: mönstret börjar om på exakt rätt sampel (efter första varvet), och
+        // om Live säger att loopen är på men spelar vidare blir det inget hack alls
         {
             Params q = p; q.v[kParamShape] = choiceNorm(kShapeParadiddle, kNumShapes); q.v[kParamRate] = choiceNorm(5, kNumRates); // 1/4
             const double bpm = 120.0, loopS = 0.0, loopE = 4.0 + 0.137;   // loop som inte slutar jämnt på ett block
-            const int n2 = 48000 * 6;
+            const int n2 = 48000 * 8;
             std::vector<float> dc2(n2, 0.5f), a1(n2), b1(n2), a2(n2), b2(n2);
-            auto runLoop = [&](int block, std::vector<float>& L, std::vector<float>& R) {
+            auto runLoop = [&](int block, bool hostLoops, bool reportCycle, std::vector<float>& L, std::vector<float>& R) {
                 Engine x; x.prepare(kSr);
                 double ppq = 0.0;
                 for (int pos = 0; pos < n2; pos += block) {
                     const int m = pos + block <= n2 ? block : n2 - pos;
                     x.setParams(q.v);
-                    x.setTransport(true, bpm, true, true, ppq, true, loopS, loopE);
+                    x.setTransport(true, bpm, true, true, ppq, reportCycle, loopS, loopE);
                     x.process(&dc2[pos], &dc2[pos], &L[pos], &R[pos], m, false);
                     ppq += m / kSr * bpm / 60.0;
-                    if (ppq >= loopE) ppq = loopS + (ppq - loopE);   // som Live: positionen hoppar tillbaka
+                    if (hostLoops && ppq >= loopE) ppq = loopS + (ppq - loopE);   // som Live: positionen hoppar tillbaka
                 }
             };
-            runLoop(1, a1, b1);      // referens: positionen exakt varje sampel
-            runLoop(512, a2, b2);    // som i Live: en position per block
+            // 1) Live loopar: jämför med sampelexakt referens från andra varvet
+            runLoop(1, true, true, a1, b1);
+            runLoop(512, true, true, a2, b2);
+            const int from = (int)(loopE * 60.0 / bpm * kSr) + 1200;   // efter första loopvarvet
             double d = 0.0;
-            for (int i = 0; i < n2; ++i) d = std::fmax(d, std::fmax(std::fabs(a1[i] - a2[i]), std::fabs(b1[i] - b2[i])));
-            std::printf("      (loop i Live: storsta skillnad mot sampelexakt referens %.6f)\n", d);
-            check(d < 0.01, "loop i Live: monstret borjar om pa ratt sampel, inget hack vid nytt varv (forut 0,2)");
+            for (int i = from; i < n2; ++i) d = std::fmax(d, std::fmax(std::fabs(a1[i] - a2[i]), std::fabs(b1[i] - b2[i])));
+            std::printf("      (loop i Live, fran andra varvet: storsta skillnad %.6f)\n", d);
+            check(d < 0.01, "loop i Live: monstret borjar om pa ratt sampel vid varje nytt varv");
+            // 2) Live säger att loopen är på men spelar vidare: exakt som utan loop
+            std::vector<float> a3(n2), b3(n2), a4(n2), b4(n2);
+            runLoop(512, false, false, a3, b3);
+            runLoop(512, false, true, a4, b4);
+            double d2 = 0.0;
+            for (int i = 0; i < n2; ++i) d2 = std::fmax(d2, std::fabs(b3[i] - b4[i]));
+            std::printf("      (loop rapporterad men inte spelad: storsta skillnad %.6f)\n", d2);
+            check(d2 < 1e-6, "loop rapporterad men inte spelad (t.ex. Session-vyn): inget hack");
         }
 
         // Rudiment: Double Stroke, Paradiddle-diddle, Inverted Paradiddle, Six Stroke Roll, Flam
