@@ -1,5 +1,8 @@
 # Ändringslogg
 
+## v2.6.2 – Finjustering (2026-11-26)
+- PAN-värdet i pil-boxen 2 px upp, texten HEAD MODEL 1 px ner.
+
 ## v2.6.1 – PAN-värdet i en pil-box (2026-11-26)
 - Under PAN-ratten visas värdet i en ruta med pilar (som LAW). Pilarna hoppar mellan stegen
   50L, 36L, 22L, 10L, C, 10R, 22R, 36R, 50R.

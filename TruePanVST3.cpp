@@ -370,7 +370,7 @@ BEGIN_FACTORY_DEF("2F Productions", "https://2f.se", "mailto:info@2f.se")
                "TruePan",
                0,                       // SingleComponentEffect: ljud och parametrar i samma objekt
                "Fx|Spatial",
-               "2.6.1",
+               "2.6.2",
                kVstVersionString,
                TruePanVst3::createInstance)
 
