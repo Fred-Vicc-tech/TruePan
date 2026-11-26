@@ -400,7 +400,7 @@ int main()
             check(d < 1e-6, "LESLIE med DEPTH 0: ljudet orort");
         }
         p.v[kParamDepth] = 1.0f;
-        p.v[kParamLesSpeed] = choiceNorm(5, kNumLesSpeeds);   // 1/16 vid 120 bpm = 8 varv/s
+        p.v[kParamLesSpeed] = choiceNorm(kLesSyncFirst + 5, kNumLesSpeeds);   // 1/16 vid 120 bpm = 8 varv/s
         std::vector<float> m = sine(2000.0, n);
         Engine e; e.prepare(kSr);
         run(e, p, m, m, ol, orr);
@@ -439,7 +439,7 @@ int main()
         }
         // Doppler: periodtiden svajar (mäts på mikrofonen utan rumsreflexer)
         {
-            Leslie les; les.prepare(kSr); les.setRoom(0.0); les.setHornHz(8.0);
+            Leslie les; les.prepare(kSr); les.setRoom(0.0); les.setTargets(8.0, 6.8);
             std::vector<double> out(n);
             for (int i = 0; i < n; ++i) {
                 double a, b;
@@ -459,7 +459,7 @@ int main()
             check(maxP / minP > 1.02 && maxP / minP < 1.15, "LESLIE: dopplereffekt (tonhojden svajar 1-7 %)");
         }
         // Inbromsning till 1/2 (1 varv/s vid 120 bpm)
-        p.v[kParamLesSpeed] = choiceNorm(0, kNumLesSpeeds);
+        p.v[kParamLesSpeed] = choiceNorm(kLesSyncFirst, kNumLesSpeeds);
         std::vector<float> m2 = sine(2000.0, 48000 * 4);
         std::vector<float> a, b;
         run(e, p, m2, m2, a, b);
@@ -467,7 +467,7 @@ int main()
         // Farten följer Lives tempo
         {
             Engine t; t.prepare(kSr);
-            Params q = p; q.v[kParamLesSpeed] = choiceNorm(1, kNumLesSpeeds);   // 1/4
+            Params q = p; q.v[kParamLesSpeed] = choiceNorm(kLesSyncFirst + 1, kNumLesSpeeds);   // 1/4
             std::vector<float> z(48000, 0.0f), a2, b2;
             for (int k = 0; k < 8; ++k) {
                 for (int pos = 0; pos < 48000; pos += 480) {
@@ -481,9 +481,80 @@ int main()
         {
             bool ok = true;
             for (int i = 0; i < kNumLesSpeeds; ++i) ok = ok && lesSpeedFromNorm(choiceNorm(i, kNumLesSpeeds)) == i;
-            ok = ok && kLesSpeedBeats[0] > kLesSpeedBeats[kNumLesSpeeds - 1];
-            check(ok && lesSpeedFromNorm(lesSpeedNormFromV11(1.0f)) == 5 && lesSpeedFromNorm(lesSpeedNormFromV11(0.0f)) == 0,
-                  "SPEED-ratten: 8 steg 1/2 ... 1/32; v1.1 FAST -> 1/16, SLOW -> 1/2");
+            ok = ok && kLesSyncBeats[0] > kLesSyncBeats[kNumLesSync - 1] && kNumLesSpeeds == 11;
+            check(ok && lesSpeedFromNorm(lesSpeedNormFromV11(1.0f)) == kLesTremolo && lesSpeedFromNorm(lesSpeedNormFromV11(0.0f)) == kLesChorale
+                  && lesSpeedFromNorm(lesSpeedNormFromV12(5.0f / 7.0f)) == kLesSyncFirst + 5,
+                  "SPEED-ratten: STOP, CHORALE, TREMOLO, 1/2 ... 1/32; aldre projekt raknas om ratt");
+        }
+        // Originalfarter, oberoende av tempot (uppmätta värden för 122/147)
+        {
+            auto settle = [&](int model, int speed, double tempo, double seconds, double& horn, double& drum) {
+                Engine x; x.prepare(kSr);
+                Params q; q.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); q.v[kParamDepth] = 1.0f;
+                q.v[kParamLesModel] = choiceNorm(model, kNumLesModels); q.v[kParamLesSpeed] = choiceNorm(speed, kNumLesSpeeds);
+                std::vector<float> z(480, 0.0f), o1(480), o2(480);
+                for (int k = 0; k < (int)(seconds * 100); ++k) {
+                    x.setParams(q.v);
+                    x.setTransport(true, tempo, false, false, 0.0);
+                    x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false);
+                }
+                horn = x.leslieHornHz(); drum = x.leslieDrumHz();
+            };
+            double h, d, h2, d2;
+            settle(kModel122, kLesTremolo, 90.0, 30.0, h, d);
+            settle(kModel122, kLesTremolo, 150.0, 30.0, h2, d2);
+            std::printf("      (122 TREMOLO: horn %.0f varv/min, trumma %.0f varv/min)\n", h * 60.0, d * 60.0);
+            check(std::fabs(h * 60.0 - 400.0) < 2.0 && std::fabs(d * 60.0 - 342.0) < 2.0 && h == h2 && d == d2,
+                  "MOD 122 TREMOLO: horn 400, trumma 342 varv/min, samma i alla tempon");
+            settle(kModel122, kLesChorale, 120.0, 30.0, h, d);
+            check(std::fabs(h * 60.0 - 48.0) < 1.0 && std::fabs(d * 60.0 - 40.0) < 1.0, "MOD 122 CHORALE: horn 48, trumma 40 varv/min");
+            settle(kModelVibratone, kLesTremolo, 120.0, 30.0, h, d);
+            check(std::fabs(d * 60.0 - 340.0) < 2.0, "VIBRATONE TREMOLO: rotorn 340 varv/min");
+            settle(kModelVibratone, kLesChorale, 120.0, 30.0, h, d);
+            check(std::fabs(d * 60.0 - 40.0) < 1.0, "VIBRATONE CHORALE: rotorn 40 varv/min");
+        }
+        // Uppvarvning CHORALE -> TREMOLO som på en riktig 122: hornet ca 1 s, trumman ca 5 s
+        {
+            Engine x; x.prepare(kSr);
+            Params q; q.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); q.v[kParamDepth] = 1.0f;
+            q.v[kParamLesSpeed] = choiceNorm(kLesChorale, kNumLesSpeeds);
+            std::vector<float> z(480, 0.0f), o1(480), o2(480);
+            for (int k = 0; k < 2000; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }
+            q.v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds);
+            const LesModelSpec& sp = kLesModels[kModel122];
+            for (int k = 0; k < 100; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }  // 1 s
+            const double hornPart = (x.leslieHornHz() - sp.hornSlow) / (sp.hornFast - sp.hornSlow);
+            const double drumPart = (x.leslieDrumHz() - sp.drumSlow) / (sp.drumFast - sp.drumSlow);
+            for (int k = 0; k < 450; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }  // 5,5 s
+            const double drumPart55 = (x.leslieDrumHz() - sp.drumSlow) / (sp.drumFast - sp.drumSlow);
+            std::printf("      (efter 1 s: horn %.0f %%, trumma %.0f %%; trumma efter 5,5 s %.0f %%)\n", hornPart * 100.0, drumPart * 100.0, drumPart55 * 100.0);
+            check(hornPart > 0.9 && drumPart < 0.5 && drumPart55 > 0.9, "uppvarvning: hornet ar framme efter ca 1 s, trumman efter ca 5,5 s");
+            // STOP: båda stannar helt
+            q.v[kParamLesSpeed] = choiceNorm(kLesStop, kNumLesSpeeds);
+            for (int k = 0; k < 1500; ++k) { x.setParams(q.v); x.process(z.data(), z.data(), o1.data(), o2.data(), 480, false); }
+            check(x.leslieHornHz() == 0.0 && x.leslieDrumHz() == 0.0, "STOP: horn och trumma stannar helt");
+        }
+        // Alla modeller: rörelse i stereo och rimlig nivå
+        {
+            bool ok = true;
+            for (int model = 0; model < kNumLesModels; ++model) {
+                Params q; q.v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); q.v[kParamDepth] = 1.0f;
+                q.v[kParamLesModel] = choiceNorm(model, kNumLesModels); q.v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds);
+                std::vector<float> in(48000 * 4), a2, b2;
+                std::srand(7);
+                double z = 0.0;
+                for (size_t i = 0; i < in.size(); ++i) { z = 0.9 * z + (std::rand() / (double)RAND_MAX - 0.5); in[i] = (float)(0.2 * z); }
+                Engine x; x.prepare(kSr);
+                run(x, q, in, in, a2, b2);
+                const int from = 48000 * 2;
+                const double pw = (rms(a2, from) * rms(a2, from) + rms(b2, from) * rms(b2, from)) / (2.0 * rms(in, from) * rms(in, from));
+                double slr = 0, sl = 0, sr2 = 0;
+                for (size_t i = from; i < a2.size(); ++i) { slr += a2[i] * (double)b2[i]; sl += a2[i] * (double)a2[i]; sr2 += b2[i] * (double)b2[i]; }
+                const double corr = slr / std::sqrt(sl * sr2);
+                std::printf("      (%s: niva %+.1f dB, korrelation L/R %.2f)\n", kLesModelLongNames[model], 10.0 * std::log10(pw), corr);
+                ok = ok && 10.0 * std::log10(pw) > -2.0 && 10.0 * std::log10(pw) < 3.0 && corr < 0.8;
+            }
+            check(ok, "MOD 122, MOD 145 och VIBRATONE: bred stereo och jamn niva");
         }
         // Byte PAN -> LESLIE klickar inte
         {
@@ -521,7 +592,9 @@ int main()
         {
             float w[kNumParams];
             const bool okOld = presetFromText("TruePan preset 1\r\nName=Old\r\nLesSpd=1.000000\r\n", w, &name);
-            check(okOld && lesSpeedFromNorm(w[kParamLesSpeed]) == 5, "preset fran v1.1 (FAST) laddas som SPEED 1/16");
+            check(okOld && lesSpeedFromNorm(w[kParamLesSpeed]) == kLesTremolo, "preset fran v1.1 (FAST) laddas som TREMOLO");
+            const bool okV12 = presetFromText("TruePan preset 2\r\nName=V12\r\nLesSpd=0.714286\r\n", w, &name);
+            check(okV12 && lesSpeedFromNorm(w[kParamLesSpeed]) == kLesSyncFirst + 5, "preset fran v1.2-1.3 (1/16) laddas som 1/16");
         }
         check(cleanPresetName("A=B\x01\xC3\xA5") == "AB__" && cleanPresetName("") == "Untitled", "presetnamn rensas fran konstiga tecken");
         const std::string u = uniquePresetName("Wide", [](const std::string& s) { return s == "Wide" || s == "Wide 2"; });
@@ -569,7 +642,9 @@ int main()
         paramDisplayText(kParamMonitor, 1.0f, t, sizeof t);  ok = ok && std::strcmp(t, "Sides") == 0;
         paramDisplayText(kParamFxMode, 1.0f, t, sizeof t);   ok = ok && std::strcmp(t, "Leslie") == 0;
         paramDisplayText(kParamLesSpeed, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "1/32") == 0;
-        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32");
+        paramDisplayText(kParamLesSpeed, defaultParam(kParamLesSpeed), t, sizeof t); ok = ok && std::strcmp(t, "Chorale") == 0;
+        paramDisplayText(kParamLesModel, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "Vibra") == 0;
+        check(ok, "texter i Live: C, L100, R50, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32, Chorale, Vibra");
 
         bool namesShort = true;
         for (int i = 0; i < kNumParams; ++i) namesShort = namesShort && std::strlen(kParamNames[i]) <= 7;
@@ -585,7 +660,7 @@ int main()
         float v0[kNumParams];
         factoryPresetValues(0, v0);
         for (int k = 0; k < kNumParams; ++k) presetsOk = presetsOk && v0[k] == defaultParam(k);
-        check(presetsOk && kNumFactoryPresets == 13, "13 fabrikspresets med giltiga varden; 'Center' = standard");
+        check(presetsOk && kNumFactoryPresets == 15, "15 fabrikspresets med giltiga varden; 'Center' = standard");
     }
 
     // ------------------------------------------------------------------

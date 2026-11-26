@@ -41,16 +41,17 @@ enum {
     kParamMonitor,      // nya parametrar läggs alltid sist
     kParamFxMode,
     kParamLesSpeed,
+    kParamLesModel,
     kNumParams
 };
 
 // Högst 7 tecken (Live 9 visar inte fler).
 static const char* const kParamNames[kNumParams] = {
     "Pan", "Width", "Mode", "Law", "LoMono", "APDepth", "APRate", "APShape", "Output",
-    "Monitor", "APMode", "LesSpd"
+    "Monitor", "APMode", "LesSpd", "LesMod"
 };
 static const char* const kParamLabels[kNumParams] = {
-    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", ""
+    "", "%", "", "dB", "Hz", "%", "", "", "dB", "", "", "", ""
 };
 
 // --- Val (knappar/väljare) ------------------------------------------------
@@ -60,12 +61,50 @@ enum { kShapeSine = 0, kShapeTriangle, kShapeSquare, kNumShapes };
 const int kNumRates = 12;
 enum { kMonStereo = 0, kMonMono, kMonMid, kMonSides, kNumMonitors };
 enum { kFxPan = 0, kFxTremolo, kFxLeslie, kNumFxModes };
-// LESLIE SPEED: en rotation (hornet) per notlängd, följer Lives tempo.
-// Ratten går från långsamt (1/2) till snabbt (1/32), som RATE.
-const int kNumLesSpeeds = 8;
-static const char* const kLesSpeedNames[kNumLesSpeeds] = { "1/2", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32" };
-static const double kLesSpeedBeats[kNumLesSpeeds] = { 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
-const int kLesSpeedSlowV11 = 0, kLesSpeedFastV11 = 5;   // v1.1 hade SLOW/FAST -> 1/2 / 1/16
+// LESLIE SPEED: STOP, CHORALE och TREMOLO har originalets fart för vald modell
+// (oberoende av tempot). Därefter tempolägen: ett varv för hornet per notlängd,
+// från långsamt (1/2) till snabbt (1/32), som RATE.
+enum { kLesStop = 0, kLesChorale, kLesTremolo, kLesSyncFirst };
+const int kNumLesSync = 8;
+const int kNumLesSpeeds = kLesSyncFirst + kNumLesSync;   // 11
+static const char* const kLesSpeedNames[kNumLesSpeeds] = {
+    "Stop", "Chorale", "Tremolo", "1/2", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32"
+};
+static const char* const kLesSpeedLongNames[kNumLesSpeeds] = {
+    "STOP", "CHORALE", "TREMOLO", "1/2", "1/4", "1/6", "1/8", "1/12", "1/16", "1/24", "1/32"
+};
+static const double kLesSyncBeats[kNumLesSync] = { 2.0, 1.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125 };
+
+// LESLIE-modeller. Farter i varv per sekund, ramptider i sekunder (tid att
+// nå nya farten). 122/147: uppmätta värden (horn 48/400 varv/min, trumma
+// 40/342 varv/min; horn ca 0,9 s upp / 1,0 s ner, trumma ca 5,5 s / 4,8 s).
+// 145: samma motorer och farter, mindre kabinett. VIBRATONE (Fender/Leslie 16):
+// en enda roterande trumma, ca 40/340 varv/min.
+enum { kModel122 = 0, kModel145, kModelVibratone, kNumLesModels };
+struct LesModelSpec
+{
+    double hornSlow, hornFast, drumSlow, drumFast;
+    double hornUp, hornDown, drumUp, drumDown;
+};
+static const LesModelSpec kLesModels[kNumLesModels] = {
+    { 48.0 / 60.0, 400.0 / 60.0, 40.0 / 60.0, 342.0 / 60.0, 0.9, 1.0, 5.5, 4.8 },   // 122 / 147
+    { 48.0 / 60.0, 400.0 / 60.0, 40.0 / 60.0, 342.0 / 60.0, 0.9, 1.0, 5.0, 4.5 },   // 145
+    { 40.0 / 60.0, 340.0 / 60.0, 40.0 / 60.0, 340.0 / 60.0, 1.6, 2.0, 1.6, 2.0 },   // Vibratone: en lätt rotor
+};
+static const char* const kLesModelNames[kNumLesModels] = { "122", "145", "Vibra" };
+static const char* const kLesModelLongNames[kNumLesModels] = { "MOD 122", "MOD 145", "VIBRATONE" };
+
+// Äldre versioner: v1.1 SLOW/FAST, v1.2-1.3 åtta tempolägen
+inline float lesSpeedNormFromV11(float old)
+{
+    return (float)(old >= 0.5f ? kLesTremolo : kLesChorale) / (float)(kNumLesSpeeds - 1);
+}
+inline float lesSpeedNormFromV12(float old)
+{
+    int i = (int)std::floor(old * (kNumLesSync - 1) + 0.5f);
+    i = i < 0 ? 0 : (i >= kNumLesSync ? kNumLesSync - 1 : i);
+    return (float)(kLesSyncFirst + i) / (float)(kNumLesSpeeds - 1);
+}
 
 static const char* const kLawNames[kNumLaws] = { "0.0", "-3.0", "-4.5", "-6.0" };
 static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square" };
@@ -107,8 +146,7 @@ inline int rateFromNorm(float n) { return choiceFromNorm(n, kNumRates); }
 inline int monitorFromNorm(float n) { return choiceFromNorm(n, kNumMonitors); }
 inline int fxModeFromNorm(float n) { return choiceFromNorm(n, kNumFxModes); }
 inline int lesSpeedFromNorm(float n) { return choiceFromNorm(n, kNumLesSpeeds); }
-// Projekt/presets från v1.1: SLOW (0) / FAST (1) räknas om till ratten
-inline float lesSpeedNormFromV11(float old) { return choiceNorm(old >= 0.5f ? kLesSpeedFastV11 : kLesSpeedSlowV11, kNumLesSpeeds); }
+inline int lesModelFromNorm(float n) { return choiceFromNorm(n, kNumLesModels); }
 
 // LOW MONO: Off (ratten i botten) eller 40 .. 300 Hz (logaritmiskt)
 const double kLowMonoMinHz = 40.0, kLowMonoMaxHz = 300.0;
@@ -146,7 +184,8 @@ inline float defaultParam(int index)
     case kParamOutput:  return outputDbToNorm(0.0);
     case kParamMonitor: return 0.0f;                            // STEREO
     case kParamFxMode:  return 0.0f;                            // PAN
-    case kParamLesSpeed: return choiceNorm(1, kNumLesSpeeds);   // 1/4
+    case kParamLesSpeed: return choiceNorm(kLesChorale, kNumLesSpeeds);
+    case kParamLesModel: return 0.0f;                           // 122
     default:            return 0.0f;
     }
 }
@@ -178,6 +217,7 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     case kParamMonitor: std::snprintf(out, max, "%s", kMonitorNames[monitorFromNorm(n)]); break;
     case kParamFxMode:  std::snprintf(out, max, "%s", kFxNames[fxModeFromNorm(n)]); break;
     case kParamLesSpeed: std::snprintf(out, max, "%s", kLesSpeedNames[lesSpeedFromNorm(n)]); break;
+    case kParamLesModel: std::snprintf(out, max, "%s", kLesModelNames[lesModelFromNorm(n)]); break;
     default:            std::snprintf(out, max, "-"); break;
     }
 }
@@ -277,13 +317,12 @@ struct LR4
 };
 
 // ---------------------------------------------------------------------------
-// LESLIE: roterande högtalare i ett rum. Ljudet delas vid 800 Hz i bastrumma
-// och diskanthorn som snurrar med var sin hastighet (trumman ca 13 % långsammare
-// och tröttare, som på originalet). Två mikrofoner står på var sin sida
-// (vänster och höger): när hornet pekar mot vänster hörs det starkt och nära
-// där, samtidigt som höger mest hör reflexen från rummets vägg. Ljudet snurrar
-// alltså runt i stereobilden, med dopplereffekt (tonhöjden svajar).
-// Farten byts mjukt (hornet på ca 1 s, trumman på några sekunder).
+// LESLIE: roterande högtalare i ett rum. 122 och 145: ljudet delas vid 800 Hz i
+// bastrumma och diskanthorn som snurrar med var sin fart och tröghet.
+// VIBRATONE: hela ljudet (gitarrområdet) går genom en enda roterande trumma.
+// Två mikrofoner står på var sin sida (vänster och höger): när rotorn pekar
+// mot vänster hörs den starkt och nära där, medan höger mest hör reflexen från
+// rummets vägg. Ljudet snurrar alltså runt i stereobilden, med dopplereffekt.
 // ---------------------------------------------------------------------------
 class Leslie
 {
@@ -296,29 +335,41 @@ public:
     {
         sr_ = sr;
         lpDrum_.set(false, 800.0, sr); hpHorn_.set(true, 800.0, sr);
+        vibHp_.set(true, 90.0, sr); vibLp_.set(false, 5000.0, sr);
         reflLp_ = 1.0 - std::exp(-2.0 * kPi * 5000.0 / sr);  // väggen tar bort lite diskant
+        setModel(model_);
         reset();
     }
     void reset()
     {
-        lpDrum_.reset(); hpHorn_.reset();
+        lpDrum_.reset(); hpHorn_.reset(); vibHp_.reset(); vibLp_.reset();
         std::fill(horn_.begin(), horn_.end(), 0.0);
         std::fill(drum_.begin(), drum_.end(), 0.0);
         reflZ_[0] = reflZ_[1] = 0.0;
         w_ = 0;
     }
-    void setHornHz(double hz) { target_ = clampd(hz, 0.1, 25.0); }
-    void setRoom(double amount) { room_ = clampd(amount, 0.0, 1.0); }   // 0 = bara mikrofonerna (för tester)
+    void setModel(int m)
+    {
+        model_ = (m >= 0 && m < kNumLesModels) ? m : kModel122;
+        const LesModelSpec& sp = kLesModels[model_];
+        // Exponentiell inbromsning/uppvarvning: ramptiden = ca 3 tidskonstanter (95 %)
+        hornUpC_ = coef(sp.hornUp); hornDnC_ = coef(sp.hornDown);
+        drumUpC_ = coef(sp.drumUp); drumDnC_ = coef(sp.drumDown);
+    }
+    void setTargets(double hornHz, double drumHz)
+    {
+        hornT_ = clampd(hornHz, 0.0, 25.0);
+        drumT_ = clampd(drumHz, 0.0, 25.0);
+    }
 
-    // Hastigheten och vinklarna går alltid, även när effekten inte hörs,
+    // Farten och vinklarna går alltid, även när effekten inte hörs,
     // så att den låter naturligt när man slår på den.
     void advance()
     {
-        const double hornT = target_, drumT = target_ * 0.87;
-        const double hornTau = hornT > hornHz_ ? 0.7 : 1.0;   // sekunder
-        const double drumTau = drumT > drumHz_ ? 3.0 : 4.0;
-        hornHz_ += (hornT - hornHz_) * (1.0 - std::exp(-1.0 / (hornTau * sr_)));
-        drumHz_ += (drumT - drumHz_) * (1.0 - std::exp(-1.0 / (drumTau * sr_)));
+        hornHz_ += (hornT_ - hornHz_) * (hornT_ > hornHz_ ? hornUpC_ : hornDnC_);
+        drumHz_ += (drumT_ - drumHz_) * (drumT_ > drumHz_ ? drumUpC_ : drumDnC_);
+        if (hornT_ == 0.0 && hornHz_ < 0.01) hornHz_ = 0.0;   // STOP: står helt still
+        if (drumT_ == 0.0 && drumHz_ < 0.01) drumHz_ = 0.0;
         hornAng_ += 2.0 * kPi * hornHz_ / sr_;
         drumAng_ += 2.0 * kPi * drumHz_ / sr_;
         if (hornAng_ > 2.0 * kPi) hornAng_ -= 2.0 * kPi;
@@ -327,32 +378,51 @@ public:
 
     void process(double in, double& outL, double& outR)
     {
-        horn_[w_] = hpHorn_.process(in);
-        drum_[w_] = lpDrum_.process(in);
-        // Mikrofonerna på motsatta sidor (vänster = +90 grader, höger = -90 grader)
-        const double micL = 0.5 * kPi, micR = -0.5 * kPi;
-        double l = rotor(horn_, hornAng_ - micL, 0.0005, 0.85) + rotor(drum_, drumAng_ - micL, 0.0002, 0.5);
-        double r = rotor(horn_, hornAng_ - micR, 0.0005, 0.85) + rotor(drum_, drumAng_ - micR, 0.0002, 0.5);
-        // Rummet: när rotorn pekar bort från en mikrofon hörs ljudet via väggen
-        // bakom (längre väg, olika långt till vänster och höger vägg).
-        double rl = wall(hornAng_ - micL, drumAng_ - micL, 0.0073);
-        double rr = wall(hornAng_ - micR, drumAng_ - micR, 0.0111);
-        reflZ_[0] += (rl - reflZ_[0]) * reflLp_;
-        reflZ_[1] += (rr - reflZ_[1]) * reflLp_;
-        outL = (l + 0.55 * room_ * reflZ_[0]) * kNorm;
-        outR = (r + 0.55 * room_ * reflZ_[1]) * kNorm;
+        const double micL = 0.5 * kPi, micR = -0.5 * kPi;   // mikrofonerna på motsatta sidor
+        if (model_ == kModelVibratone) {
+            // En rotor (frigolittrumma framför en 10-tumshögtalare), gitarrområdet
+            drum_[w_] = vibLp_.process(vibHp_.process(in));
+            horn_[w_] = 0.0;
+            const double l = rotor(drum_, drumAng_ - micL, 0.0004, 0.75);
+            const double r = rotor(drum_, drumAng_ - micR, 0.0004, 0.75);
+            const double rl = wallOne(drum_, drumAng_ - micL, 0.0061);
+            const double rr = wallOne(drum_, drumAng_ - micR, 0.0089);
+            reflZ_[0] += (rl - reflZ_[0]) * reflLp_;
+            reflZ_[1] += (rr - reflZ_[1]) * reflLp_;
+            outL = (l + 0.5 * room_ * reflZ_[0]) * kNormVib;
+            outR = (r + 0.5 * room_ * reflZ_[1]) * kNormVib;
+        } else {
+            horn_[w_] = hpHorn_.process(in);
+            drum_[w_] = lpDrum_.process(in);
+            const bool small = model_ == kModel145;
+            const double l = rotor(horn_, hornAng_ - micL, 0.0005, 0.85) + rotor(drum_, drumAng_ - micL, 0.0002, small ? 0.45 : 0.5);
+            const double r = rotor(horn_, hornAng_ - micR, 0.0005, 0.85) + rotor(drum_, drumAng_ - micR, 0.0002, small ? 0.45 : 0.5);
+            // Rummet: när rotorn pekar bort från en mikrofon hörs ljudet via väggen
+            // bakom. 145 är mindre och står oftast närmare väggen: kortare, svagare reflex.
+            const double rl = wall(hornAng_ - micL, drumAng_ - micL, small ? 0.0049 : 0.0073);
+            const double rr = wall(hornAng_ - micR, drumAng_ - micR, small ? 0.0071 : 0.0111);
+            reflZ_[0] += (rl - reflZ_[0]) * reflLp_;
+            reflZ_[1] += (rr - reflZ_[1]) * reflLp_;
+            const double rg = (small ? 0.42 : 0.55) * room_;
+            outL = (l + rg * reflZ_[0]) * kNorm;
+            outR = (r + rg * reflZ_[1]) * kNorm;
+        }
         w_ = (w_ + 1) & (kBufSize - 1);
     }
 
+    void setRoom(double amount) { room_ = clampd(amount, 0.0, 1.0); }   // 0 = bara mikrofonerna (för tester)
     double hornHz() const { return hornHz_; }
     double drumHz() const { return drumHz_; }
-    double hornAngle() const { return hornAng_; }
+    int model() const { return model_; }
 
 private:
     // Nivå: Leslien ger brett, okorrelerat ljud som upplevs svagare än samma
     // effekt i mitten. Därför ligger den ca 1,5 dB över torrt ljud i effekt,
     // så att den upplevs lika stark som PAN-läget.
     static constexpr double kNorm = 1.05;
+    static constexpr double kNormVib = 1.12;
+
+    double coef(double rampSec) const { return 1.0 - std::exp(-3.0 / (rampSec * sr_)); }
 
     // Rotorn sedd från en mikrofon: avståndet ändras (fördröjning = doppler)
     // och nivån är högst när rotorn pekar mot mikrofonen.
@@ -360,8 +430,7 @@ private:
     {
         const double c = std::cos(ang);
         const double delay = (0.0012 + depthSec * (1.0 - c)) * sr_;
-        const double gain = 1.0 + amDepth * c;
-        return read(buf, delay) * gain;
+        return read(buf, delay) * (1.0 + amDepth * c);
     }
     // Reflexen: starkast när rotorn pekar bort från mikrofonen (mot väggen)
     double wall(double hornAng, double drumAng, double extraSec) const
@@ -370,6 +439,11 @@ private:
         const double h = read(horn_, (0.0012 + extraSec + 0.0005 * (1.0 - ch)) * sr_) * (0.5 + 0.5 * ch);
         const double d = read(drum_, (0.0012 + extraSec + 0.0002 * (1.0 - cd)) * sr_) * (0.7 + 0.3 * cd);
         return h + d;
+    }
+    double wallOne(const std::vector<double>& buf, double ang, double extraSec) const
+    {
+        const double c = -std::cos(ang);
+        return read(buf, (0.0012 + extraSec + 0.0004 * (1.0 - c)) * sr_) * (0.5 + 0.5 * c);
     }
     // Läs med bråkdels-fördröjning (Hermite-interpolation)
     double read(const std::vector<double>& buf, double delay) const
@@ -387,11 +461,13 @@ private:
 
     double sr_ = 44100.0;
     LR4 lpDrum_, hpHorn_;
+    Biquad vibHp_, vibLp_;
     std::vector<double> horn_, drum_;
     double reflLp_ = 0.5, reflZ_[2] = { 0.0, 0.0 }, room_ = 1.0;
-    int w_ = 0;
-    double target_ = 2.0;
-    double hornHz_ = 2.0, drumHz_ = 1.74, hornAng_ = 0.0, drumAng_ = 1.0;
+    int w_ = 0, model_ = kModel122;
+    double hornUpC_ = 0.0, hornDnC_ = 0.0, drumUpC_ = 0.0, drumDnC_ = 0.0;
+    double hornT_ = 48.0 / 60.0, drumT_ = 40.0 / 60.0;
+    double hornHz_ = 48.0 / 60.0, drumHz_ = 40.0 / 60.0, hornAng_ = 0.0, drumAng_ = 1.0;
 };
 
 // ---------------------------------------------------------------------------
@@ -437,6 +513,8 @@ public:
         monitor_ = monitorFromNorm(n[kParamMonitor]);
         fxMode_ = fxModeFromNorm(n[kParamFxMode]);
         lesSpeed_ = lesSpeedFromNorm(n[kParamLesSpeed]);
+        const int model = lesModelFromNorm(n[kParamLesModel]);
+        if (model != leslie_.model()) leslie_.setModel(model);
     }
 
     // Tempo och position från värden. När Live spelar följer AUTO-PAN takten.
@@ -466,7 +544,18 @@ public:
         }
 
         const double phaseInc = tempo_ / 60.0 / sr_ / kRateBeats[rate_];
-        leslie_.setHornHz(tempo_ / 60.0 / kLesSpeedBeats[lesSpeed_]);
+        {
+            // LESLIE: originalfart (STOP/CHORALE/TREMOLO) eller tempoläge
+            const LesModelSpec& sp = kLesModels[leslie_.model()];
+            double h = 0.0, d = 0.0;
+            if (lesSpeed_ == kLesChorale) { h = sp.hornSlow; d = sp.drumSlow; }
+            else if (lesSpeed_ == kLesTremolo) { h = sp.hornFast; d = sp.drumFast; }
+            else if (lesSpeed_ >= kLesSyncFirst) {
+                h = tempo_ / 60.0 / kLesSyncBeats[lesSpeed_ - kLesSyncFirst];
+                d = h * sp.drumFast / sp.hornFast;   // trumman i samma förhållande som originalet
+            }
+            leslie_.setTargets(h, d);
+        }
         double pkL = 0.0, pkR = 0.0;
         double pos = pan_;
 
@@ -585,7 +674,7 @@ private:
     // parametrar
     double pan_ = 0.0, width_ = 1.0, depth_ = 0.0, outGain_ = 1.0, lowHz_ = 120.0;
     int mode_ = kModeStereo, law_ = kLaw3, rate_ = 5, shape_ = kShapeSine;
-    int monitor_ = kMonStereo, fxMode_ = kFxPan, lesSpeed_ = 1;
+    int monitor_ = kMonStereo, fxMode_ = kFxPan, lesSpeed_ = kLesChorale;
     bool lowOn_ = false;
 
     // utjämnade värden
@@ -610,14 +699,14 @@ private:
 // ---------------------------------------------------------------------------
 // Fabrikspresets (syns som program i Lives presetlista och i fönstret)
 // ---------------------------------------------------------------------------
-const int kNumFactoryPresets = 13;
+const int kNumFactoryPresets = 15;
 
 inline const char* factoryPresetName(int i)
 {
     static const char* const names[kNumFactoryPresets] = {
         "Center", "Hard Left", "Hard Right", "Wide Stereo", "Mono",
         "Auto-Pan 1/4", "Auto-Pan 1/8 Tri", "Ping-Pong 1/16", "Slow Sweep 2 Bars", "Bass Mono 120",
-        "Tremolo 1/8", "Leslie Slow", "Leslie Fast"
+        "Tremolo 1/8", "Leslie 122 Chorale", "Leslie 122 Tremolo", "Leslie 145 Tremolo", "Vibratone Fast"
     };
     return (i >= 0 && i < kNumFactoryPresets) ? names[i] : "";
 }
@@ -637,8 +726,12 @@ inline void factoryPresetValues(int i, float* v)
     case 8: v[kParamDepth] = 0.7f; v[kParamRate] = choiceNorm(1, kNumRates); break;
     case 9: v[kParamLowMono] = lowMonoNorm(120.0); v[kParamWidth] = widthNorm(1.2); break;
     case 10: v[kParamFxMode] = choiceNorm(kFxTremolo, kNumFxModes); v[kParamDepth] = 0.85f; v[kParamRate] = choiceNorm(7, kNumRates); break;
-    case 11: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(0, kNumLesSpeeds); break;
-    case 12: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(5, kNumLesSpeeds); break;
+    case 11: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(kLesChorale, kNumLesSpeeds); break;
+    case 12: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds); break;
+    case 13: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds);
+             v[kParamLesModel] = choiceNorm(kModel145, kNumLesModels); break;
+    case 14: v[kParamFxMode] = choiceNorm(kFxLeslie, kNumFxModes); v[kParamDepth] = 1.0f; v[kParamLesSpeed] = choiceNorm(kLesTremolo, kNumLesSpeeds);
+             v[kParamLesModel] = choiceNorm(kModelVibratone, kNumLesModels); break;
     default: break;
     }
 }
@@ -658,8 +751,9 @@ inline void cleanName(const char* in, char* out, size_t max)
 // ---------------------------------------------------------------------------
 // Egna presets som textfil (Dokument\TruePan Presets\*.tpp)
 // ---------------------------------------------------------------------------
-static const char* const kPresetHeader = "TruePan preset 2";
+static const char* const kPresetHeader = "TruePan preset 3";
 static const char* const kPresetHeaderV11 = "TruePan preset 1";   // v1.1: LesSpd var SLOW/FAST
+static const char* const kPresetHeaderV12 = "TruePan preset 2";   // v1.2-1.3: LesSpd hade 8 tempolägen
 
 inline std::string cleanPresetName(const std::string& in)
 {
@@ -711,7 +805,8 @@ inline std::string uniquePresetName(const std::string& base, ExistsFn exists)
 inline bool presetFromText(const std::string& text, float* v, std::string* name)
 {
     const bool v11 = text.compare(0, std::strlen(kPresetHeaderV11), kPresetHeaderV11) == 0;
-    if (!v11 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
+    const bool v12 = text.compare(0, std::strlen(kPresetHeaderV12), kPresetHeaderV12) == 0;
+    if (!v11 && !v12 && text.compare(0, std::strlen(kPresetHeader), kPresetHeader) != 0) return false;
     for (int i = 0; i < kNumParams; ++i) v[i] = defaultParam(i);
     if (name) *name = "Untitled";
     size_t pos = 0;
@@ -731,6 +826,7 @@ inline bool presetFromText(const std::string& text, float* v, std::string* name)
             if (endp != val.c_str() && d >= 0.0 && d <= 1.0) {               // ogiltigt ignoreras
                 v[i] = (float)d;
                 if (v11 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV11((float)d);
+                if (v12 && i == kParamLesSpeed) v[i] = lesSpeedNormFromV12((float)d);
             }
         }
     }

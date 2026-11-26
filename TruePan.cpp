@@ -41,7 +41,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 1300;           // TruePan 1.3
+const VstInt32 kVersion = 1400;           // TruePan 1.4
 
 void copyString(char* dst, const char* src, size_t maxLen)
 {
@@ -56,7 +56,7 @@ void copyString(char* dst, const char* src, size_t maxLen)
 struct StateChunk
 {
     char magic[4];          // "TPst"
-    uint32_t version;       // 3 (v1.2: SPEED-ratt; v1.1 = 2 med SLOW/FAST; v1.0 = 1 med 9 parametrar)
+    uint32_t version;       // 4 (v1.4: modeller, STOP/CHORALE/TREMOLO; 3 = v1.2-1.3; 2 = v1.1; 1 = v1.0)
     uint32_t numParams;
     int32_t program;        // vald fabrikspreset (-1 = egen)
     char name[32];          // presetnamn
@@ -273,7 +273,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         if (!ptr) return 0;
         std::memset(&p->chunk, 0, sizeof p->chunk);
         std::memcpy(p->chunk.magic, "TPst", 4);
-        p->chunk.version = 3;
+        p->chunk.version = 4;
         p->chunk.numParams = kNumParams;
         p->chunk.program = p->program;
         copyString(p->chunk.name, p->presetName, sizeof p->chunk.name);
@@ -304,6 +304,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
             float v;
             std::memcpy(&v, data + kChunkHeader + i * sizeof(float), sizeof(float));
             if (version == 2 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV11(v);
+            if (version == 3 && (int)i == kParamLesSpeed && v >= 0.0f && v <= 1.0f) v = lesSpeedNormFromV12(v);
             p->setParam((int)i, v); // ogiltiga värden ignoreras
         }
         return 1;
@@ -480,7 +481,7 @@ struct Editor
     RectDef btnFx[kNumFxModes] = { { colX(2) + 14.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 75.0f, 119.0f, 56.0f, 34.0f },
                                    { colX(2) + 136.0f, 119.0f, 56.0f, 34.0f } };
-    RectDef shapeBox   = { colX(2) + 100.0f, 160.0f, 92.0f, 26.0f };
+    RectDef shapeBox   = { colX(2) + 100.0f, 160.0f, 92.0f, 26.0f };   // LESLIE: modellväljaren (vänster halva = föregående)
     RectDef presetPrev = { colX(3) + 14.0f,  357.0f, 30.0f, 30.0f };
     RectDef presetNext = { colX(3) + 162.0f, 357.0f, 30.0f, 30.0f };
     RectDef btnSave    = { colX(3) + 14.0f,  401.0f, 84.0f, 34.0f };
@@ -639,12 +640,13 @@ void drawKnob(Graphics& g, const KnobDef& k, float v, bool dim = false, bool bip
 }
 
 void drawSmallKnob(Graphics& g, const FontFamily& ff, const KnobDef& k, float v, const wchar_t* label, const wchar_t* value,
-                   bool dim = false)
+                   bool dim = false, const Color* valueColor = nullptr)
 {
     const Color& tc = dim ? kTextDim : kText;
     drawText(g, label, ff, 12, FontStyleBold, tc, k.cx - 52.0f, k.cy - 46.0f, 104.0f, StringAlignmentCenter);
     drawKnob(g, k, v, dim);
-    drawText(g, value, ff, 13, FontStyleRegular, tc, k.cx - 52.0f, k.cy + 27.0f, 104.0f, StringAlignmentCenter);
+    drawText(g, value, ff, 13, valueColor ? FontStyleBold : FontStyleRegular, valueColor && !dim ? *valueColor : tc,
+             k.cx - 52.0f, k.cy + 27.0f, 104.0f, StringAlignmentCenter);
 }
 
 void drawBigValue(Graphics& g, const FontFamily& ff, const KnobDef& k, const wchar_t* text, const Color& c)
@@ -767,7 +769,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         g.DrawString(L"Pan", -1, &logoFont, PointF(21.0f + trueBox.Width, 7.0f), typo, &blue);
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kTextDim, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v1.3", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v1.4", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -821,7 +823,16 @@ void paint(Editor* ed, HDC hdc, int width, int height)
             drawButton(g, ff, ed->btnFx[i], fxLabels[i], fxMode == i, i == kFxPan ? kCyan : kOrange, 13.0f);
     }
     drawText(g, L"DEPTH", ff, 16, FontStyleBold, kText, x0 + 16, 163, 100, StringAlignmentNear);
-    if (fxMode != kFxLeslie) {
+    if (fxMode == kFxLeslie) {
+        // Modellväljare: < MOD 122 >  (klick på vänster/höger halva)
+        const RectDef& sb = ed->shapeBox;
+        drawBox(g, sb.x, sb.y, sb.w, sb.h);
+        drawText(g, L"<", ff, 12, FontStyleBold, kTextDim, sb.x + 3.0f, sb.y + 4.0f, 12.0f, StringAlignmentCenter);
+        drawText(g, L">", ff, 12, FontStyleBold, kTextDim, sb.x + sb.w - 15.0f, sb.y + 4.0f, 12.0f, StringAlignmentCenter);
+        wchar_t mw[24];
+        wideFromNarrow(kLesModelLongNames[lesModelFromNorm(pv[kParamLesModel])], mw, 24);
+        drawText(g, mw, ff, 11, FontStyleBold, autoOn ? kOrange : kTextDim, sb.x + 14.0f, sb.y + 5.0f, sb.w - 28.0f, StringAlignmentCenter);
+    } else {
         // Vågformsruta: klick = nästa form
         const RectDef& sb = ed->shapeBox;
         drawBox(g, sb.x, sb.y, sb.w, sb.h);
@@ -835,10 +846,11 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     swprintf(txt, 64, L"%.0f %%", depth * 100.0);
     drawBigValue(g, ff, ed->knobs[3], txt, kText);
     if (fxMode == kFxLeslie) {
-        // SPEED: en rotation per notlängd (1/2 ... 1/32), följer Lives tempo
+        // SPEED: STOP / CHORALE / TREMOLO (originalfart, orange) och tempolägen 1/2 ... 1/32
+        const int sp = lesSpeedFromNorm(pv[kParamLesSpeed]);
         wchar_t sw[16];
-        wideFromNarrow(kLesSpeedNames[lesSpeedFromNorm(pv[kParamLesSpeed])], sw, 16);
-        drawSmallKnob(g, ff, ed->knobs[6], pv[kParamLesSpeed], L"SPEED", sw, !autoOn);
+        wideFromNarrow(kLesSpeedLongNames[sp], sw, 16);
+        drawSmallKnob(g, ff, ed->knobs[6], pv[kParamLesSpeed], L"SPEED", sw, !autoOn, sp < kLesSyncFirst ? &kOrange : nullptr);
     } else {
         wchar_t rw[24];
         wideFromNarrow(kRateNames[rateFromNorm(pv[kParamRate])], rw, 24);
@@ -1198,6 +1210,11 @@ bool handleButtons(Editor* ed, int x, int y)
     if (ed->monNext.hit(x, y))    { stepChoice(ed, kParamMonitor, kNumMonitors, +1, true); return true; }
     for (int i = 0; i < kNumFxModes; ++i)
         if (ed->btnFx[i].hit(x, y)) { setParamOnce(ed, kParamFxMode, choiceNorm(i, kNumFxModes)); return true; }
+    if (ed->leslieMode() && ed->shapeBox.hit(x, y)) {
+        const bool next = x >= ed->shapeBox.x + ed->shapeBox.w * 0.5f;
+        stepChoice(ed, kParamLesModel, kNumLesModels, next ? +1 : -1, true);
+        return true;
+    }
     if (!ed->leslieMode() && ed->shapeBox.hit(x, y)) {
         stepChoice(ed, kParamShape, kNumShapes, +1, true);
         return true;

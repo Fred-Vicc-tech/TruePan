@@ -1,5 +1,15 @@
 # Ändringslogg
 
+## v1.4 – Leslie-modeller med originalfart (2026-11-26)
+- Modellväljare i LESLIE-läget (rutan bredvid DEPTH, klicka vänster/höger halva): MOD 122 (även 147),
+  MOD 145 och VIBRATONE (Fender/Leslie 16, en enda roterande trumma, gitarrområdet).
+- SPEED: STOP, CHORALE och TREMOLO med originalets fart, oberoende av tempot, följt av tempolägena 1/2 … 1/32.
+  122/147: horn 48/400 varv/min, trumma 40/342 varv/min (uppmätta värden). Uppvarvning ca 0,9 s (horn)
+  och 5,5 s (trumma), inbromsning ca 1,0 s / 4,8 s. VIBRATONE: 40/340 varv/min.
+- I tempolägena snurrar trumman i samma förhållande till hornet som på originalet.
+- Nya presets: Leslie 122 Chorale, Leslie 122 Tremolo, Leslie 145 Tremolo, Vibratone Fast.
+- Projekt och presets från v1.1: SLOW blir CHORALE, FAST blir TREMOLO. Från v1.2-1.3: tempolägena behålls.
+
 ## v1.3 – Nivåer och mätarskala (2026-11-26)
 - TREMOLO en aning mildare: DEPTH 50 % = −9 dB i dalarna (v1.2: −12 dB).
 - LESLIE ca 2,4 dB starkare (ca +1,5 dB över torrt i effekt), så att den upplevs lika stark som PAN.
