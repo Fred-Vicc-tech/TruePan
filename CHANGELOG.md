@@ -1,5 +1,9 @@
 # Ändringslogg
 
+## v2.5.1 – PAN går att dra i STEREO FIELD (2026-11-26)
+- Klicka eller dra i sidled på STEREO FIELD-banan för att flytta PAN (snäpper till C nära mitten,
+  dubbelklick = C). Muspekaren blir en sidledspil över banan.
+
 ## v2.5 – VST3-version (2026-11-26)
 - Ny VST3-version (TruePan.vst3) bredvid VST2-versionen (TruePan.dll), byggd med Steinbergs VST 3 SDK 3.8.1
   under MIT-licens (LICENSE-VST3-SDK.txt följer med). Samma ljudmotor, samma fönster och samma sparformat.

@@ -138,6 +138,8 @@ struct Editor
     HWND prevFocus = nullptr;          // fönstret som hade fokus innan musen kom in
     bool tracking = false;
     bool overLogo(int x, int y) const { return x >= 15 && x <= logoRight && y >= 4 && y <= 52; }
+    bool dragField = false;            // PAN dras i STEREO FIELD
+    bool overField(int x, int y) const;
 
     bool leslieMode() const { return fxModeFromNorm(plugin->params[kParamFxMode].load()) == kFxLeslie; }
 
@@ -401,6 +403,20 @@ float meterFrac(float peak)
 const float kManX = 40.0f, kManW = 798.0f, kManTop = 224.0f, kManBottom = 664.0f;
 const float kThumbX = 852.0f, kThumbW = 6.0f;
 
+// STEREO FIELD-banan (PAN går att dra här)
+const float kFieldX0 = 70.0f, kFieldX1 = 540.0f, kFieldY = 366.0f + kDy;
+float fieldPanNorm(int x)
+{
+    float n = (x - kFieldX0) / (kFieldX1 - kFieldX0);
+    n = n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
+    if (std::fabs(n - 0.5f) * (kFieldX1 - kFieldX0) < 4.0f) n = 0.5f;   // snäpper till C
+    return n;
+}
+bool Editor::overField(int x, int y) const
+{
+    return !showBack && x >= kFieldX0 - 10 && x <= kFieldX1 + 10 && y >= kFieldY - 14 && y <= kFieldY + 12;
+}
+
 float manualMaxScroll(const Editor* ed) { return std::max(0.0f, ed->contentH - (kManBottom - kManTop)); }
 
 void manualFont(int kind, float& size, int& style, Color& color)
@@ -437,7 +453,7 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.5", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"TruePan v2.5.1", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
     drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2 / VST3  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
     {
@@ -545,7 +561,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.5", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.5.1", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -682,7 +698,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
     drawPanel(g, kFieldX, kRow2Y, kFieldW, kRow2H);
     drawText(g, L"STEREO FIELD", ff, 14, FontStyleBold, kTextDim, kFieldX + 16, kRow2Y + 6, 200, StringAlignmentNear);
     {
-        const float fx0 = 70.0f, fx1 = 540.0f, fy = 366.0f + kDy;   // DISTANCE-ratten till höger
+        const float fx0 = kFieldX0, fx1 = kFieldX1, fy = kFieldY;   // DISTANCE-ratten till höger
         auto fieldX = [&](double ps) { return fx0 + (float)((ps + 1.0) * 0.5) * (fx1 - fx0); };
         // AUTO-PAN-område (orange band)
         if (autoOn) {
@@ -1130,6 +1146,10 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 SetCursor(LoadCursor(nullptr, IDC_HAND));
                 return TRUE;
             }
+            if (!ed->showBack && (ed->overField(pt.x, pt.y) || ed->dragField)) {
+                SetCursor(LoadCursor(nullptr, IDC_SIZEWE));   // dra i sidled
+                return TRUE;
+            }
         }
         break;
     case WM_LBUTTONDOWN:
@@ -1157,6 +1177,15 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             return 0;
         }
         if (handleButtons(ed, x, y)) return 0;
+        // STEREO FIELD: klicka/dra i sidled flyttar PAN, dubbelklick = C
+        if (ed->overField(x, y)) {
+            if (msg == WM_LBUTTONDBLCLK) { setParamOnce(ed, kParamPan, 0.5f); return 0; }
+            ed->dragField = true;
+            ed->plugin->beginEdit(kParamPan);
+            setParamUI(ed, kParamPan, fieldPanNorm(x));
+            SetCapture(hwnd);
+            return 0;
+        }
         const int k = ed->knobAt(x, y);
         if (k < 0) return 0;
         const int param = ed->knobs[k].param;
@@ -1199,6 +1228,10 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         }
+        if (ed && ed->dragField) {
+            setParamUI(ed, kParamPan, fieldPanNorm((short)LOWORD(lParam)));
+            return 0;
+        }
         if (ed && ed->dragKnob >= 0) {
             const int dy = ed->dragStartY - (short)HIWORD(lParam);
             const float pixelsForFullRange = (wParam & MK_SHIFT) ? 1000.0f : 250.0f; // Shift = finjustering
@@ -1206,6 +1239,12 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         return 0;
     case WM_LBUTTONUP:
+        if (ed && ed->dragField) {
+            ed->dragField = false;
+            ed->plugin->endEdit(kParamPan);
+            ReleaseCapture();
+            return 0;
+        }
         if (ed && ed->dragThumb) {
             ed->dragThumb = false;
             ReleaseCapture();

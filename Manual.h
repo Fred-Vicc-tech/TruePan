@@ -59,7 +59,8 @@ static const ManualPara kManual[] = {
                 L"MONO is the quickest way to check mono compatibility." },
 
     { kManHead, L"STEREO FIELD AND DISTANCE" },
-    { kManBody, L"The ring shows the PAN knob, the dot shows where the sound actually is right now (including auto-pan). The orange band "
+    { kManBody, L"The ring shows the PAN knob, the dot shows where the sound actually is right now (including auto-pan). Click or drag "
+                L"sideways on the track to move PAN (double-click returns to C). The orange band "
                 L"is the auto-pan range. The dot gets smaller the farther away the sound is. The meters show peak level per channel." },
     { kManBody, L"DISTANCE goes from 0.25 to 100 m, with 1 m (unchanged sound) at 9 o'clock. Farther away the sound follows the "
                 L"inverse distance law (-6 dB per doubling) and the air absorbs the treble. Closer than 1 m the level rises; TruePan "
