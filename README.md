@@ -1,6 +1,7 @@
-# TruePan v2.4 – Psychoacoustic Stereo Panner
+# TruePan v2.5 – Psychoacoustic Stereo Panner
 
-VST2-effekt (64-bit) för Ableton Live 9.6 på Windows 7 och senare.
+VST2- och VST3-effekt (64-bit) för Windows 7 och senare. VST2 för Ableton Live 9.6, VST3 för Live 10+ och andra program.
+VST3-delen byggs med Steinbergs VST 3 SDK under MIT-licens (se `LICENSE-VST3-SDK.txt`).
 Byggd på samma sätt som TrueSub: eget VST2-gränssnitt (ingen JUCE), CMake,
 GitHub Actions på windows-2022 med Visual Studio 2022 (toolset v143),
 statisk runtime och `_WIN32_WINNT=0x0601`.
@@ -28,11 +29,11 @@ Alla inställningar kan automatiseras i Live och sparas i projektet.
 
 ## Installera
 
-1. Gå till **Actions** i repot → senaste gröna körningen.
-2. Ladda ner **TruePan-win64** (en zip-fil) och packa upp `TruePan.dll`.
-3. Lägg `TruePan.dll` i din VST-mapp (samma mapp som TrueSub).
-4. Starta Live → webbläsaren → **Plug-ins** → dra TruePan till ett ljudspår
-   (eller efter TrueSub på samma spår).
+1. Gå till **Actions** i repot → senaste gröna körningen → ladda ner **TruePan-win64** och packa upp.
+2. **VST2** (Live 9.6): lägg `TruePan.dll` i din VST-mapp.
+3. **VST3** (Live 10+, Cubase, Studio One, Reaper, Bitwig m.fl.): lägg hela mappen `TruePan.vst3` i
+   `C:\Program Files\Common Files\VST3`.
+4. Starta om programmet och låt det söka efter pluginer.
 
 ## Automatiska tester (körs i varje bygge)
 
@@ -50,7 +51,10 @@ Alla inställningar kan automatiseras i Live och sparas i projektet.
 | Fil | Innehåll |
 |---|---|
 | `TruePanDSP.h` | Ljudmotorn (inga Windows-delar, testas på alla datorer) |
-| `TruePan.cpp` | VST2-delen och fönstret (GDI+) |
+| `TruePanCore.h` | Gemensam kärna: parametrar, ljudbehandling per block, sparat tillstånd |
+| `TruePan.cpp` | VST2-delen |
+| `TruePanVST3.cpp` | VST3-delen |
+| `TruePanEditor.cpp` | Fönstret (GDI+), gemensamt för VST2 och VST3 |
 | `Manual.h` | Manualtexten på baksidan |
 | `vst2.h` | Eget VST2-gränssnitt (samma som i TrueSub) |
 | `TruePanTests.cpp`, `HostTests.cpp` | Automatiska tester |

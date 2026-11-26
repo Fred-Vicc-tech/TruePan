@@ -1025,6 +1025,30 @@ int main()
         paramDisplayText(kParamLesModel, 1.0f, t, sizeof t); ok = ok && std::strcmp(t, "Vibra") == 0;
         check(ok, "texter i Live: C, 50L, 25R, 100, Stereo, -3.0, Off, 0.0, Sides, Leslie, 1/32, Chorale, Vibra");
 
+        // Text -> värde (VST3: skriv in ett värde) och tillbaka
+        {
+            float v = -1.0f; bool ok2 = true;
+            ok2 = ok2 && paramFromText(kParamPan, "25L", v) && std::fabs(v - 0.25f) < 1e-6;
+            ok2 = ok2 && paramFromText(kParamPan, "C", v) && v == 0.5f;
+            ok2 = ok2 && paramFromText(kParamWidth, "150", v) && std::fabs(widthFromNorm(v) - 1.5) < 1e-6;
+            ok2 = ok2 && paramFromText(kParamOutput, "-6", v) && std::fabs(outputNormToDb(v) + 6.0) < 1e-4;
+            ok2 = ok2 && paramFromText(kParamLowMono, "Off", v) && v == 0.0f;
+            ok2 = ok2 && paramFromText(kParamLowMono, "120", v) && std::fabs(lowMonoHz(v) - 120.0) < 0.5;
+            ok2 = ok2 && paramFromText(kParamDistance, "10", v) && std::fabs(distanceM(v) - 10.0) < 1e-3;
+            ok2 = ok2 && paramFromText(kParamRate, "1/16T", v) && rateFromNorm(v) == 10;
+            ok2 = ok2 && paramFromText(kParamShape, "flam", v) && shapeFromNorm(v) == kShapeFlam;
+            ok2 = ok2 && !paramFromText(kParamShape, "nonsense", v);
+            bool roundTrip = true;
+            for (int i = 0; i < kNumParams; ++i) {
+                char buf[32];
+                const float n = defaultParam(i);
+                paramDisplayText(i, n, buf, sizeof buf);
+                float back = -1.0f;
+                roundTrip = roundTrip && paramFromText(i, buf, back) && std::fabs(back - n) < 0.01f;
+            }
+            check(ok2 && roundTrip, "VST3: varden kan skrivas in som text (25L, 150, -6, Off, 120, 10, 1/16T, flam)");
+        }
+
         bool namesShort = true;
         for (int i = 0; i < kNumParams; ++i) namesShort = namesShort && std::strlen(kParamNames[i]) <= 7;
         check(namesShort, "parameternamn hogst 7 tecken");

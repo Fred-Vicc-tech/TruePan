@@ -1,5 +1,14 @@
 # Ändringslogg
 
+## v2.5 – VST3-version (2026-11-26)
+- Ny VST3-version (TruePan.vst3) bredvid VST2-versionen (TruePan.dll), byggd med Steinbergs VST 3 SDK 3.8.1
+  under MIT-licens (LICENSE-VST3-SDK.txt följer med). Samma ljudmotor, samma fönster och samma sparformat.
+- VST3-versionen har en bypass-parameter (värdens bypass-knapp) med 10 ms övertoning, långa parameternamn
+  och värden som kan skrivas in som text (t.ex. "25L", "120 Hz", "-6 dB").
+- Steinbergs validator körs automatiskt i varje bygge (47 av 47 tester godkända).
+- Koden är uppdelad: TruePanCore.h (gemensam kärna), TruePanEditor.cpp (fönstret), TruePan.cpp (VST2),
+  TruePanVST3.cpp (VST3).
+
 ## v2.4.3 – WIDTH fungerar även med LESLIE (2026-11-26)
 - WIDTH låg före Leslien, som blandar ihop kanalerna till mono, så WIDTH gjorde ingenting i LESLIE-läget
   med DEPTH 100 %. Nu ligger Leslien före WIDTH: 0 % = mono Leslie, 200 % = dubbelt så bred.

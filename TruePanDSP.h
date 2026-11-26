@@ -320,6 +320,71 @@ inline void paramDisplayText(int index, float n, char* out, size_t max)
     }
 }
 
+// Text -> parametervärde (för VST3, där man kan skriva in ett värde).
+// Klarar samma texter som paramDisplayText ger, plus vanliga varianter.
+inline bool textEqualNoCase(const char* a, const char* b)
+{
+    for (; *a && *b; ++a, ++b) {
+        char x = *a, y = *b;
+        if (x >= 'A' && x <= 'Z') x = (char)(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = (char)(y - 'A' + 'a');
+        if (x != y) return false;
+    }
+    return *a == 0 && *b == 0;
+}
+inline int paramStepCount(int index)   // antal val (0 = steglös)
+{
+    switch (index) {
+    case kParamMode:     return 2;
+    case kParamLaw:      return kNumLaws;
+    case kParamRate:     return kNumRates;
+    case kParamShape:    return kNumShapes;
+    case kParamMonitor:  return kNumMonitors;
+    case kParamFxMode:   return kNumFxModes;
+    case kParamLesSpeed: return kNumLesSpeeds;
+    case kParamLesModel: return kNumLesModels;
+    case kParamHead:     return 2;
+    default:             return 0;
+    }
+}
+inline bool paramFromText(int index, const char* text, float& out)
+{
+    if (!text || index < 0 || index >= kNumParams) return false;
+    while (*text == ' ') ++text;
+    const int steps = paramStepCount(index);
+    if (steps > 0) {
+        char buf[32];
+        for (int i = 0; i < steps; ++i) {
+            const float n = choiceNorm(i, steps);
+            paramDisplayText(index, n, buf, sizeof buf);
+            if (textEqualNoCase(buf, text)) { out = n; return true; }
+        }
+        return false;
+    }
+    if (index == kParamLowMono && (textEqualNoCase(text, "off") || textEqualNoCase(text, "0"))) { out = 0.0f; return true; }
+    if (index == kParamPan && textEqualNoCase(text, "c")) { out = 0.5f; return true; }
+    char* end = nullptr;
+    double v = std::strtod(text, &end);
+    if (end == text || !std::isfinite(v)) return false;
+    while (end && *end == ' ') ++end;
+    switch (index) {
+    case kParamPan: {
+        // "25L", "25R", eller -25 / 25 (minus = vänster); 50 = helt åt sidan
+        if (end && (*end == 'L' || *end == 'l')) v = -std::fabs(v);
+        else if (end && (*end == 'R' || *end == 'r')) v = std::fabs(v);
+        out = panNorm(clampd(v / 50.0, -1.0, 1.0));
+        return true;
+    }
+    case kParamWidth:    out = widthNorm(v / 100.0); return true;
+    case kParamLowMono:  out = lowMonoNorm(clampd(v, kLowMonoMinHz, kLowMonoMaxHz)); return true;
+    case kParamDepth:    out = (float)clampd(v / 100.0, 0.0, 1.0); return true;
+    case kParamOutput:   out = outputDbToNorm(v); return true;
+    case kParamHeadSize: out = headSizeNorm(v); return true;
+    case kParamDistance: out = distanceNorm(clampd(v, kDistMin, kDistMax)); return true;
+    default:             return false;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // PAN LAW. Förstärkning för vänster/höger kanal vid position pos (-1..+1).
 // Normerad så att mitten alltid är 0 dB (pluginet ändrar inte nivån när PAN
