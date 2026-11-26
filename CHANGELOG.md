@@ -1,5 +1,12 @@
 # Ändringslogg
 
+## v2.4 – Baksidan med manual (2026-11-26)
+- Klick på TruePan-loggan (eller den lilla i-symbolen) vänder pluginet till baksidan; klick igen eller BACK
+  vänder tillbaka. Muspekaren blir en hand över loggan.
+- Överst: TruePan v2.4 och "Fredrik Frigren | 2F Productions 2026 | info@2f.se".
+- Rullbar manual (engelska) om alla funktioner och vetenskapen bakom, med källor. Rulla med mushjulet eller
+  dra i rullningslisten. Texten finns i Manual.h och är lätt att ändra.
+
 ## v2.3.1 – Säkrare takt-synk vid loop (2026-11-26)
 - v2.0.1 litade alltid på Lives loopinformation. Om Live säger att loopen är på men spelar vidare (t.ex. i
   Session-vyn, eller med loopområdet på ett annat ställe) hoppade mönstret fel vid loopens slut: ett hack.

@@ -24,7 +24,7 @@ endif()
 
 # --- Pluginet (bara på Windows) -------------------------------------------
 if(WIN32)
-    add_library(TruePan MODULE TruePan.cpp TruePanDSP.h vst2.h)
+    add_library(TruePan MODULE TruePan.cpp TruePanDSP.h Manual.h vst2.h)
     set_target_properties(TruePan PROPERTIES PREFIX "" SUFFIX ".dll")
     target_link_libraries(TruePan PRIVATE gdiplus user32 gdi32 comdlg32 shell32)
 endif()
