@@ -1,5 +1,9 @@
 # Ändringslogg
 
+## v1.4.1 – Fönsterjusteringar (2026-11-26)
+- SPEED visar STOP, CHORALE och TREMOLO i samma stil som 1/4 osv.
+- Modell-/vågformsrutan bredvid DEPTH är bredare, så att VIBRATONE får plats.
+
 ## v1.4 – Leslie-modeller med originalfart (2026-11-26)
 - Modellväljare i LESLIE-läget (rutan bredvid DEPTH, klicka vänster/höger halva): MOD 122 (även 147),
   MOD 145 och VIBRATONE (Fender/Leslie 16, en enda roterande trumma, gitarrområdet).
