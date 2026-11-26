@@ -1292,6 +1292,58 @@ void editorClose(Core* p)
     }
 }
 
+// Ritar fönstret (framsida eller baksida) till en PNG-fil utan att öppna något
+// fönster. Används av RenderGui (bilder av gränssnittet i bygget).
+bool editorRenderPng(Core* core, bool backSide, const wchar_t* path)
+{
+    GdiplusStartupInput input;
+    ULONG_PTR token = 0;
+    if (GdiplusStartup(&token, &input, nullptr) != Ok) return false;
+    bool ok = false;
+    {
+        Editor ed;
+        ed.plugin = core;
+        ed.showBack = backSide;
+        BITMAPINFO bi = {};
+        bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = kEditorWidth;
+        bi.bmiHeader.biHeight = -kEditorHeight;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        void* bits = nullptr;
+        HDC screen = GetDC(nullptr);
+        HDC mem = CreateCompatibleDC(screen);
+        HBITMAP dib = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (mem && dib) {
+            HGDIOBJ old = SelectObject(mem, dib);
+            paint(&ed, mem, kEditorWidth, kEditorHeight);
+            GdiFlush();
+            SelectObject(mem, old);
+            Bitmap* bmp = Bitmap::FromHBITMAP(dib, nullptr);
+            if (bmp) {
+                UINT num = 0, size = 0;
+                GetImageEncodersSize(&num, &size);
+                std::vector<unsigned char> buf(size);
+                ImageCodecInfo* codecs = reinterpret_cast<ImageCodecInfo*>(buf.data());
+                GetImageEncoders(num, size, codecs);
+                for (UINT i = 0; i < num; ++i) {
+                    if (wcscmp(codecs[i].MimeType, L"image/png") == 0) {
+                        ok = bmp->Save(path, &codecs[i].Clsid, nullptr) == Ok;
+                        break;
+                    }
+                }
+                delete bmp;
+            }
+        }
+        if (dib) DeleteObject(dib);
+        if (mem) DeleteDC(mem);
+        ReleaseDC(nullptr, screen);
+    }
+    GdiplusShutdown(token);
+    return ok;
+}
+
 } // namespace truepan
 
 

@@ -41,6 +41,12 @@ add_executable(HostTests HostTests.cpp TruePan.cpp ${TRUEPAN_EDITOR_SOURCES})
 target_link_libraries(HostTests PRIVATE ${TRUEPAN_EDITOR_LIBS})
 add_test(NAME host COMMAND HostTests)
 
+# Bilder av gränssnittet (Windows): ritas med samma kod som pluginet
+if(WIN32)
+    add_executable(RenderGui RenderGui.cpp TruePanCore.h ${TRUEPAN_EDITOR_SOURCES})
+    target_link_libraries(RenderGui PRIVATE ${TRUEPAN_EDITOR_LIBS})
+endif()
+
 # --- VST3-pluginet (om Steinbergs VST 3 SDK finns, MIT-licens) --------------
 # Bygget hämtar SDK:t (se .github/workflows/build.yml) och anger sökvägen:
 #   cmake -DTRUEPAN_VST3_SDK=<sökväg till vst3sdk> ...

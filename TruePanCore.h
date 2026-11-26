@@ -192,5 +192,7 @@ struct Core
 // Fönstret (Windows). Öppnas i ett föräldrafönster från värdprogrammet.
 void editorOpen(Core* core, void* parentWindow);
 void editorClose(Core* core);
+// Ritar fönstret till en PNG-fil (för bilder av gränssnittet)
+bool editorRenderPng(Core* core, bool backSide, const wchar_t* path);
 
 } // namespace truepan
