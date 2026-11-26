@@ -25,7 +25,7 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2520;           // TruePan 2.5.2
+const VstInt32 kVersion = 2600;           // TruePan 2.6
 
 struct Plugin : Core
 {
@@ -186,6 +186,7 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         const char* s = static_cast<const char*>(ptr);
         if (!s) return 0;
         if (!std::strcmp(s, "receiveVstTimeInfo")) return 1;
+        if (!std::strcmp(s, "receiveVstKeys")) return 1;
         return 0;
     }
 
@@ -200,6 +201,9 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
         editorClose(p);
         return 1;
     case effEditIdle: return 0;
+    case effEditKeyDown:   // value = virtuell tangent: VKEY_LEFT 11, VKEY_RIGHT 13
+        if (value == 11 || value == 13) return editorKey(p, value == 11 ? -1 : 1) ? 1 : 0;
+        return 0;
 #endif
 
     default: return 0;

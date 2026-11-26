@@ -134,7 +134,7 @@ enum
     effGetPlugCategory = 35,
     effGetEffectName = 45, effGetVendorString = 47, effGetProductString = 48,
     effGetVendorVersion = 49, effCanDo = 51, effGetTailSize = 52,
-    effGetVstVersion = 58,
+    effGetVstVersion = 58, effEditKeyDown = 59, effEditKeyUp = 60,
 
     // kommandon plugin -> värd
     audioMasterAutomate = 0,

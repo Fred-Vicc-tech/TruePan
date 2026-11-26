@@ -139,6 +139,8 @@ struct Editor
     bool tracking = false;
     bool overLogo(int x, int y) const { return x >= 15 && x <= logoRight && y >= 4 && y <= 52; }
     bool dragField = false;            // PAN dras i STEREO FIELD
+    int lastKeyDir = 0;                // piltangenterna (se panKey)
+    DWORD lastKeyTime = 0;
     bool overField(int x, int y) const;
 
     bool leslieMode() const { return fxModeFromNorm(plugin->params[kParamFxMode].load()) == kFxLeslie; }
@@ -409,7 +411,10 @@ float fieldPanNorm(int x)
 {
     float n = (x - kFieldX0) / (kFieldX1 - kFieldX0);
     n = n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
-    if (std::fabs(n - 0.5f) * (kFieldX1 - kFieldX0) < 4.0f) n = 0.5f;   // snäpper till C
+    for (int i = 0; i < kNumPanSteps; ++i) {                            // snäpper till stegen (och C)
+        const float s = panStepNorm(kPanSteps[i]);
+        if (std::fabs(n - s) * (kFieldX1 - kFieldX0) < 4.0f) return s;
+    }
     return n;
 }
 bool Editor::overField(int x, int y) const
@@ -453,7 +458,7 @@ void paintBack(Editor* ed, Graphics& g, const FontFamily& ff)
 {
     // Credits
     drawPanel(g, 20.0f, 83.0f, 860.0f, 92.0f);
-    drawText(g, L"TruePan v2.5.2", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
+    drawText(g, L"TruePan v2.6", ff, 22, FontStyleBold, kText, 38.0f, 92.0f, 400.0f, StringAlignmentNear);
     drawText(g, L"Psychoacoustic Stereo Panner  \u00B7  VST2 / VST3  \u00B7  Windows 7 and later", ff, 13, FontStyleItalic, kText,
              38.0f, 123.0f, 600.0f, StringAlignmentNear);
     {
@@ -561,7 +566,7 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         ed->logoRight = 21.0f + trueBox.Width + panBox.Width + 6.0f;   // loggan är klickbar (baksidan)
     }
     drawText(g, L"Psychoacoustic Stereo Panner", ff, 15, FontStyleItalic, kText, 21, 53, 320, StringAlignmentNear);
-    drawText(g, L"TruePan  v2.5.2", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
+    drawText(g, L"TruePan  v2.6", ff, 15, FontStyleRegular, kText, 555, 32, 300, StringAlignmentFar);
     SolidBrush dot(signal ? kCyan : Color(255, 50, 54, 58));
     g.FillEllipse(&dot, 862.0f, 35.0f, 14.0f, 14.0f);
 
@@ -708,13 +713,17 @@ void paint(Editor* ed, HDC hdc, int width, int height)
         }
         Pen trackPen(Color(255, 60, 64, 70), 2.0f);
         g.DrawLine(&trackPen, fx0, fy, fx1, fy);
-        const double tick[5] = { -1.0, -0.5, 0.0, 0.5, 1.0 };
-        const wchar_t* tickName[5] = { L"50L", L"25L", L"C", L"25R", L"50R" };
+        // PAN-stegen: 50L 36L 22L 10L C 10R 22R 36R 50R
         Pen tickPen(Color(255, 80, 85, 92), 1.0f);
-        for (int i = 0; i < 5; ++i) {
-            const float x = fieldX(tick[i]);
-            g.DrawLine(&tickPen, x, fy - 8.0f, x, fy + 8.0f);
-            drawText(g, tickName[i], ff, 11, FontStyleRegular, kTextDim, x - 30.0f, fy + 9.0f, 60.0f, StringAlignmentCenter);
+        for (int i = 0; i < kNumPanSteps; ++i) {
+            const int u = kPanSteps[i];
+            const float x = fieldX(u / 50.0);
+            const float h = (u == 0 || u == 50 || u == -50) ? 8.0f : 6.0f;
+            g.DrawLine(&tickPen, x, fy - h, x, fy + h);
+            wchar_t tn[8];
+            if (u == 0) wcscpy(tn, L"C");
+            else swprintf(tn, 8, L"%d%c", u < 0 ? -u : u, u < 0 ? L'L' : L'R');
+            drawText(g, tn, ff, 10, FontStyleRegular, kTextDim, x - 22.0f, fy + 9.0f, 44.0f, StringAlignmentCenter);
         }
         // PAN-rattens läge (ring) och verklig position (fylld punkt)
         Pen ringPen(kTextDim, 1.5f);
@@ -889,6 +898,20 @@ void setParamOnce(Editor* ed, int param, float v)
     setParamUI(ed, param, v);
     if (param == kParamDistance) ed->plugin->endEdit(kParamOutput);
     ed->plugin->endEdit(param);
+}
+
+// Piltangenterna vänster/höger: PAN till nästa steg. Värden kan skicka samma
+// tangent både som fönstermeddelande och via sitt eget anrop, så dubbletter
+// inom 15 ms räknas bara en gång.
+bool panKey(Editor* ed, int dir)
+{
+    if (!ed || ed->showBack) return false;
+    const DWORD now = GetTickCount();
+    if (dir == ed->lastKeyDir && now - ed->lastKeyTime < 15) return true;
+    ed->lastKeyDir = dir;
+    ed->lastKeyTime = now;
+    setParamOnce(ed, kParamPan, panNextStep(ed->plugin->params[kParamPan].load(), dir));
+    return true;
 }
 
 void stepChoice(Editor* ed, int param, int count, int step, bool wrap)
@@ -1275,6 +1298,11 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
         }
         return 0;
+    case WM_GETDLGCODE:
+        return DLGC_WANTARROWS | DLGC_WANTCHARS;
+    case WM_KEYDOWN:
+        if (ed && (wParam == VK_LEFT || wParam == VK_RIGHT) && panKey(ed, wParam == VK_LEFT ? -1 : 1)) return 0;
+        break;
     case WM_DESTROY:
         KillTimer(hwnd, 1);
         return 0;
@@ -1316,6 +1344,11 @@ void editorOpen(Core* p, void* parent)
     CreateWindowExW(0, kWindowClass, L"TruePan", WS_CHILD | WS_VISIBLE,
                     0, 0, kEditorWidth, kEditorHeight,
                     static_cast<HWND>(parent), nullptr, g_instance, ed);
+}
+
+bool editorKey(Core* p, int dir)
+{
+    return panKey(static_cast<Editor*>(p->editor), dir);
 }
 
 void editorClose(Core* p)

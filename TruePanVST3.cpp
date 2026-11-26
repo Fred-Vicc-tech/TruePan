@@ -6,6 +6,7 @@
 // Projekt sparas i samma format som VST2-versionen.
 #include "TruePanCore.h"
 
+#include "pluginterfaces/base/keycodes.h"
 #include "public.sdk/source/vst/vstsinglecomponenteffect.h"
 #include "public.sdk/source/main/pluginfactory.h"
 #include "public.sdk/source/common/pluginview.h"
@@ -332,6 +333,16 @@ public:
 
     tresult PLUGIN_API canResize() override { return kResultFalse; }
 
+    // Piltangenterna vänster/höger flyttar PAN ett steg
+    tresult PLUGIN_API onKeyDown(char16 key, int16 keyCode, int16 modifiers) override
+    {
+#if defined(_WIN32)
+        if (keyCode == KEY_LEFT || keyCode == KEY_RIGHT)
+            return truepan::editorKey(core_, keyCode == KEY_LEFT ? -1 : 1) ? kResultTrue : kResultFalse;
+#endif
+        return CPluginView::onKeyDown(key, keyCode, modifiers);
+    }
+
 private:
     truepan::Core* core_;
 };
@@ -359,7 +370,7 @@ BEGIN_FACTORY_DEF("2F Productions", "https://2f.se", "mailto:info@2f.se")
                "TruePan",
                0,                       // SingleComponentEffect: ljud och parametrar i samma objekt
                "Fx|Spatial",
-               "2.5.2",
+               "2.6.0",
                kVstVersionString,
                TruePanVst3::createInstance)
 

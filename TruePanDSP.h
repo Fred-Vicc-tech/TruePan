@@ -114,9 +114,9 @@ inline float lesSpeedNormFromV12(float old)
 }
 
 static const char* const kLawNames[kNumLaws] = { "0.0", "-3.0", "-4.5", "-6.0" };
-static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square", "Paradid", "ParaVar",
+static const char* const kShapeNames[kNumShapes] = { "Sine", "Tri", "Square", "Paradid", "DidTie",
                                                      "DblStrk", "PDDidl", "InvPara", "SixStrk", "Flam" };
-static const char* const kShapeLongNames[kNumShapes] = { "SINE", "TRIANGLE", "SQUARE", "PARADIDDLE", "PARAVARIANT",
+static const char* const kShapeLongNames[kNumShapes] = { "SINE", "TRIANGLE", "SQUARE", "PARADIDDLE", "DIDDLETIE",
                                                          "DOUBLE STROKE", "PARADIDDLE-DIDDLE", "INV. PARADIDDLE", "SIX STROKE ROLL", "FLAM" };
 
 // Rudiment: varje slag är en puls på en RATE-period (första halvan ute på
@@ -135,7 +135,7 @@ static const double kParadiddle[8] = { 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.
 // PARADIDDLE: varje slag är en ren SQUARE-puls på en RATE-period: första halvan
 // ute på sidan, andra halvan tillbaka i mitten. R-R hörs alltså som två slag.
 // Hela mönstret tar 8 RATE-perioder (RATE 1/16 = sextondelsslag).
-// PARAVARIANT: varje slag är en halv RATE-period och ljudet stannar på sidan
+// DIDDLETIE (hette PARAVARIANT före v2.6): varje slag är en halv RATE-period och ljudet stannar på sidan
 // (R-R blir ett längre slag). Hela mönstret tar 4 RATE-perioder.
 const double kLfoCycle = 24.0;  // AUTO-PAN-fasen räknas över 24 perioder (delbart med 2, 4, 6 och 8 slag)
 
@@ -151,6 +151,19 @@ static const bool kAccInvParadiddle[8] = { true, false, false, false, true, fals
 
 // Är PARADIDDLE-slaget "på" just nu (första halvan av perioden)?
 inline bool paradiddleOn(double phase) { return phase - std::floor(phase) < 0.5; }
+
+// PAN-steg (piltangenterna och skalan i STEREO FIELD), i Ableton-enheter 50L..50R
+const int kNumPanSteps = 9;
+static const int kPanSteps[kNumPanSteps] = { -50, -36, -22, -10, 0, 10, 22, 36, 50 };
+inline float panStepNorm(int units) { return (float)((units / 50.0 + 1.0) * 0.5); }
+// Nästa steg åt vänster (dir < 0) eller höger (dir > 0) från ett godtyckligt läge
+inline float panNextStep(float norm, int dir)
+{
+    const double u = (norm * 2.0 - 1.0) * 50.0;
+    if (dir > 0) { for (int i = 0; i < kNumPanSteps; ++i) if (kPanSteps[i] > u + 0.25) return panStepNorm(kPanSteps[i]); return panStepNorm(50); }
+    for (int i = kNumPanSteps - 1; i >= 0; --i) if (kPanSteps[i] < u - 0.25) return panStepNorm(kPanSteps[i]);
+    return panStepNorm(-50);
+}
 
 // Äldre projekt/presets hade 3 eller 4 former: räkna om rattläget
 inline float shapeNormFromOld(float old, int oldCount)
@@ -1392,7 +1405,7 @@ inline const char* factoryPresetName(int i)
     static const char* const names[kNumFactoryPresets] = {
         "Center", "Hard Left", "Hard Right", "Wide Stereo", "Mono",
         "Auto-Pan 1/4", "Auto-Pan 1/8 Tri", "Ping-Pong 1/16", "Slow Sweep 2 Bars", "Bass Mono 120",
-        "Tremolo 1/8", "Leslie 122 Chorale", "Leslie 122 Tremolo", "Leslie 145 Tremolo", "Vibratone Fast", "Paradiddle 1/16", "Paravariant 1/8", "Double Stroke 1/16", "Flam 1/8"
+        "Tremolo 1/8", "Leslie 122 Chorale", "Leslie 122 Tremolo", "Leslie 145 Tremolo", "Vibratone Fast", "Paradiddle 1/16", "Diddletie 1/8", "Double Stroke 1/16", "Flam 1/8"
     };
     return (i >= 0 && i < kNumFactoryPresets) ? names[i] : "";
 }

@@ -61,6 +61,19 @@ static double db(double x) { return gainToDb(x); }
 
 int main()
 {
+    {
+        // PAN-steg: 50L 36L 22L 10L C 10R 22R 36R 50R, från godtyckligt läge
+        float n = 0.5f; bool ok = true;
+        const int want[4] = { 10, 22, 36, 50 };
+        for (int i = 0; i < 4; ++i) { n = panNextStep(n, 1); ok = ok && std::fabs(n - panStepNorm(want[i])) < 1e-6; }
+        ok = ok && panNextStep(n, 1) == panStepNorm(50);                       // stannar vid 50R
+        ok = ok && std::fabs(panNextStep(panStepNorm(15), -1) - panStepNorm(10)) < 1e-6;
+        ok = ok && std::fabs(panNextStep(panStepNorm(15), 1) - panStepNorm(22)) < 1e-6;
+        ok = ok && std::fabs(panNextStep(panStepNorm(-10), -1) - panStepNorm(-22)) < 1e-6;
+        ok = ok && std::fabs(panNextStep(panStepNorm(-50), -1) - panStepNorm(-50)) < 1e-6;
+        check(ok, "PAN-steg med piltangenterna: C 10 22 36 50 at bada hall, aven fran mellanlagen");
+        check(std::strcmp(kShapeLongNames[kShapeParaVariant], "DIDDLETIE") == 0, "PARAVARIANT heter DIDDLETIE");
+    }
     // ------------------------------------------------------------------
     // Standardvärden: ljudet går igenom oförändrat
     // ------------------------------------------------------------------

@@ -39,7 +39,7 @@ static const ManualPara kManual[] = {
     { kManBody, L"Shapes: SINE, TRIANGLE and SQUARE are classic waveforms. PARADIDDLE (R L R R L R L L) and the rudiments DOUBLE STROKE "
                 L"(R R L L), PARADIDDLE-DIDDLE (R L R R L L), INV. PARADIDDLE (R L L R L R R L), SIX STROKE ROLL (accented R l l r r L) and "
                 L"FLAM (a soft grace note on the opposite side just before each stroke) play every stroke as a separate pulse; RATE is the "
-                L"length of one stroke. PARAVARIANT plays the paradiddle without returning to the center between strokes." },
+                L"length of one stroke. DIDDLETIE plays the paradiddle without returning to the center between strokes." },
     { kManBody, L"In TREM the sound stays in the center, so the two hands are told apart by their tone instead: left-hand strokes "
                 L"sound slightly darker and right-hand strokes slightly brighter, and the first stroke of each group is accented "
                 L"(unaccented strokes are 4 dB softer). Both follow DEPTH." },
@@ -63,7 +63,7 @@ static const ManualPara kManual[] = {
 
     { kManHead, L"STEREO FIELD AND DISTANCE" },
     { kManBody, L"The ring shows the PAN knob, the dot shows where the sound actually is right now (including auto-pan). Click or drag "
-                L"sideways on the track to move PAN (double-click returns to C). The orange band "
+                L"sideways on the track to move PAN (it snaps to the steps 50L, 36L, 22L, 10L, C, 10R, 22R, 36R and 50R; double-click returns to C). The left and right arrow keys move PAN one step at a time while the mouse is over the plugin. The orange band "
                 L"is the auto-pan range. The dot gets smaller the farther away the sound is. The meters show peak level per channel." },
     { kManBody, L"DISTANCE goes from 0.25 to 100 m, with 1 m (unchanged sound) at 9 o'clock. Farther away the sound follows the "
                 L"inverse distance law (-6 dB per doubling) and the air absorbs the treble. Closer than 1 m the level rises; TruePan "

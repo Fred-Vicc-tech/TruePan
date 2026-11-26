@@ -1,5 +1,11 @@
 # Ändringslogg
 
+## v2.6 – PAN-steg och DIDDLETIE (2026-11-26)
+- PARAVARIANT heter nu DIDDLETIE (samma ljud; gamla projekt laddas som förut).
+- PAN-steg: 50L, 36L, 22L, 10L, C, 10R, 22R, 36R, 50R. Piltangenterna vänster/höger flyttar PAN
+  ett steg (när muspekaren är över pluginet). Stegen syns på STEREO FIELD-skalan, och dragning
+  på banan snäpper till dem. PAN-ratten är fortfarande steglös.
+
 ## v2.5.2 – Rudimenten hörs i TREM (2026-11-26)
 - TREM med PARADIDDLE och rudimenten: vänster hand låter lite mörkare och höger hand lite ljusare
   (diskanten över ca 1,2 kHz −/+ 3 dB vid DEPTH 100 %).

@@ -192,6 +192,7 @@ struct Core
 // Fönstret (Windows). Öppnas i ett föräldrafönster från värdprogrammet.
 void editorOpen(Core* core, void* parentWindow);
 void editorClose(Core* core);
+bool editorKey(Core* core, int dir);   // piltangent från värden: -1 = vänster, +1 = höger
 // Ritar fönstret till en PNG-fil (för bilder av gränssnittet)
 bool editorRenderPng(Core* core, bool backSide, const wchar_t* path);
 
