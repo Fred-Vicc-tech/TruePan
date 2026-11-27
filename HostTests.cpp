@@ -160,6 +160,12 @@ int main()
     check(e2->getParameter(e2, kParamPan) == 1.0f && e2->getParameter(e2, kParamWidth) == 0.8f &&
           e2->getParameter(e2, kParamMode) == 0.0f && e2->getParameter(e2, kParamOutput) == outputDbToNorm(-6.0),
           "alla parametrar aterstalls efter oppning");
+    // Live väljer samma program igen direkt efter inläsningen: inställningarna ska vara kvar
+    e2->dispatcher(e2, effSetProgram, 0, e2->dispatcher(e2, effGetProgram, 0, 0, nullptr, 0), nullptr, 0);
+    e2->dispatcher(e2, effSetProgram, 0, 0, nullptr, 0);
+    check(e2->getParameter(e2, kParamPan) == 1.0f && e2->getParameter(e2, kParamWidth) == 0.8f
+          && e2->getParameter(e2, kParamOutput) == outputDbToNorm(-6.0),
+          "projekt oppnas i Live: installningarna skrivs inte over av programvalet");
 
     // Projekt sparat med v1.0 (9 parametrar): nya parametrar får standardvärden
     {

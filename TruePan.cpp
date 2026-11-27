@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <new>
+#include <chrono>
 
 #if defined(_WIN32)
   #define TRUEPAN_HAS_EDITOR 1
@@ -25,13 +26,17 @@ using namespace truepan;
 namespace {
 
 const VstInt32 kUniqueId = ('T' << 24) | ('r' << 16) | ('P' << 8) | 'n';
-const VstInt32 kVersion = 2620;           // TruePan 2.6.2
+const VstInt32 kVersion = 2630;           // TruePan 2.6.3
 
 struct Plugin : Core
 {
     AEffect effect;
     audioMasterCallback host = nullptr;
     ERect rect;
+    // När projektet öppnas läser Live först in tillståndet (chunk) och väljer sedan
+    // samma "program" igen. Det får inte skriva över inställningarna med fabrikspresetet.
+    std::chrono::steady_clock::time_point chunkLoadedAt{};
+    bool chunkLoaded = false;
 
     void hostAutomate(int index, float value) override
     {
@@ -146,9 +151,16 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
 
     // Fabrikspresets visas som "program" i Lives presetlista.
     case effGetProgram: return p->program < 0 ? 0 : p->program;
-    case effSetProgram:
+    case effSetProgram: {
+        // Samma program som redan är valt: gör ingenting (Live gör så när ett projekt
+        // öppnas, direkt efter att tillståndet lästs in). Strax efter inläsning
+        // ignoreras programbyten helt av samma skäl.
+        const int current = p->program < 0 ? 0 : p->program;
+        if ((int)value == current) return 0;
+        if (p->chunkLoaded && std::chrono::steady_clock::now() - p->chunkLoadedAt < std::chrono::milliseconds(1500)) return 0;
         p->loadFactoryPreset((int)value, false);
         return 0;
+    }
     case effGetProgramName:
         if (ptr) copyString((char*)ptr, p->presetName, 24);
         return 0;
@@ -166,7 +178,10 @@ VstIntPtr dispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr valu
     }
     case effSetChunk:
         if (!ptr || value <= 0) return 0;
-        return p->loadState(ptr, (size_t)value) ? 1 : 0;
+        if (!p->loadState(ptr, (size_t)value)) return 0;
+        p->chunkLoaded = true;
+        p->chunkLoadedAt = std::chrono::steady_clock::now();
+        return 1;
 
     case effGetPlugCategory: return kPlugCategEffect;
     case effGetEffectName:

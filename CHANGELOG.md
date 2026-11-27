@@ -1,5 +1,11 @@
 # Ändringslogg
 
+## v2.6.3 – Inställningarna sparas i Live-projekt (2026-11-27)
+- Rättat: när ett projekt öppnades i Live läste TruePan först in de sparade inställningarna,
+  men Live valde sedan "program" (fabrikspreset) igen, och då skrevs allt över med presetet
+  Center. Nu ignoreras ett programval som är detsamma som det redan valda, och programval
+  direkt efter inläsningen.
+
 ## v2.6.2 – Finjustering (2026-11-26)
 - PAN-värdet i pil-boxen 2 px upp, texten HEAD MODEL 1 px ner.
 
